@@ -1,0 +1,448 @@
+Nice — here’s a finished, production-ready **expanded work order** for **Work Order 2 — GΛLYPH Tokenizer and Lexer Implementation**. I wrote it so an experienced Rust engineer (or an AI agent) can take it and implement the crate with minimal back-and-forth.
+
+# Work Order 2 — GΛLYPH Tokenizer and Lexer Implementation
+
+## Expanded Objective
+
+Implement the lexical analysis subsystem of the **GΛLYPH** compiler in Rust as a standalone crate `glyph_lexer`. The lexer must convert GΛLYPH source text into a **canonical, deterministic token stream** suitable for the parser. The tokenization must be invariant to non-semantic formatting (spaces, comment placement, line endings) while remaining **Unicode-safe** and **locale-agnostic**.
+
+Deliverable: `glyph_lexer` crate with `token.rs`, `lexer.rs`, full unit tests (≥50 tests), and CI validation.
+
+---
+
+## Key Technical Constraints (interpreted into strict requirements)
+
+1. **Deterministic token generation**: same input string → identical `Vec<Token>` (no ephemeral state that could vary across runs).
+2. **Canonical whitespace & comment handling**: whitespace and comments must be normalized in a deterministic way so formatting differences do not change semantic token streams. (Design choice below.)
+3. **ParseError::Lexical**: all lexing failures map to `ParseError::Lexical` with useful spans.
+4. **Unicode-safe & locale-agnostic**: identifiers follow Unicode identifier rules (use `unicode-xid`); accept full Unicode codepoints in string/char literals.
+5. **TokenKind coverage**: every token categorized under `TokenKind` (Identifier, Literal, Symbol, Operator, Delimiter, Comment, Eof, etc.).
+6. **Robust edge-case handling**: nested comments, unterminated string/char, invalid escape sequences, unexpected EOF, surrogate pairs, and reading from bytes that are not valid UTF-8 (note: `tokenize()` accepts `&str` so upstream must check bytes; provide helper for `&[u8]`).
+7. **Canonicalization policy** is **explicit** and deterministic (see below).
+8. **Single-threaded tests** to ensure deterministic order: validation command sets `--test-threads=1`.
+
+---
+
+## Canonicalization policy (must be implemented exactly)
+
+These rules MUST be documented and enforced by the lexer so tokens are invariant to formatting:
+
+1. **Line endings**: convert CRLF (`\r\n`) and CR (`\r`) to LF (`\n`) prior to lexing.
+2. **Whitespace tokens**:
+
+   * Do *not* emit separate whitespace tokens for ordinary spaces/newlines.
+   * Instead, collapse non-semantic whitespace between two semantic tokens into a single internal separator state; parser should not observe whitespace.
+   * Preserve newlines only when they are semantically significant (e.g., if GΛLYPH uses newline-significant constructs). If language is not newline-significant, strip all non-semantic newlines.
+3. **Comments**:
+
+   * Two options (choose and implement **one** consistently):
+     **A)** Emit `TokenKind::Comment` tokens with canonical content: trim leading/trailing spaces inside comment, normalize internal line endings to `\n`, collapse multiple internal spaces to single space. (Parser can ignore comment tokens.)
+     **B)** Strip comments completely but add them to a deterministic side table if tooling needs them (for e.g., docs).
+   * This work order recommends **A** (emit canonicalized `Comment` tokens) to preserve comments deterministically.
+4. **Identifier normalization**: identifiers are **NOT** case-folded or locale-normalized; preserve exact character sequence. Use Unicode XID rules to determine valid start/continue characters.
+5. **Literal canonicalization**:
+
+   * Numeric literals: maintain source textual value, but implement a canonical representation for equivalent numeric forms (e.g., `1_000` → `1000` in a canonical `NumericLiteral.value` field). Keep raw text in token for diagnostics.
+   * String literals: normalize escape expansions (e.g., `\u{00A0}` -> canonical codepoint representation) and canonicalize line endings inside multiline strings.
+6. **Token position**: tokens must contain absolute, deterministic `Span { start: usize, end: usize }` relative to the normalized source (after CRLF→LF). This allows identical spans for identical source.
+
+---
+
+## Crate layout (files / modules)
+
+```
+glyph_lexer/
+├─ src/
+│  ├─ lib.rs            // crate exports
+│  ├─ token.rs          // Token, TokenKind, Span
+│  ├─ lexer.rs          // tokenize() and Lexer struct
+│  ├─ error.rs          // ParseError, Lexical variants
+│  └─ tests/
+│     ├─ lex_basic.rs
+│     ├─ lex_comments.rs
+│     └─ ...            // many unit test files
+├─ Cargo.toml
+└─ README.md
+```
+
+---
+
+## token.rs (essential sketch)
+
+```rust
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize, // byte offset in normalized source
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenKind {
+    Identifier(String),
+    IntegerLiteral { raw: String, canonical_value: String },
+    FloatLiteral { raw: String, canonical_value: String },
+    StringLiteral(String), // canonicalized contents
+    CharLiteral(char),
+    Symbol(String),        // punctuation like "::", "->"
+    Operator(String),      // +, -, *, /, etc.
+    Delimiter(char),       // '(', ')', '{', '}', ',', ';'
+    Comment(String),       // canonicalized comment text
+    Eof,
+}
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
+impl Token {
+    pub fn new(kind: TokenKind, start: usize, end: usize) -> Token {
+        Token { kind, span: Span { start, end } }
+    }
+}
+```
+
+---
+
+## error.rs (essential sketch)
+
+```rust
+#[derive(Debug)]
+pub enum ParseError {
+    Lexical { message: String, span: Option<(usize, usize)> },
+    // ... other parse errors
+}
+
+impl ParseError {
+    pub fn lexical(msg: impl Into<String>, span: Option<(usize,usize)>) -> Self {
+        ParseError::Lexical { message: msg.into(), span }
+    }
+}
+```
+
+---
+
+## lexer.rs — Implementation blueprint & algorithm
+
+**High-level approach**: single-pass deterministic state machine over normalized `&str` (CRLF→LF). Use `char_indices()` to get byte offsets and characters. Use `unicode_xid::UnicodeXID::is_xid_start` / `is_xid_continue` for identifiers.
+
+**Data structures**:
+
+* `struct Lexer<'a> { input: &'a str, chars: CharIndices, cur_pos: usize, peek: Option<(usize, char)> }`
+* `fn tokenize(input: &str) -> Result<Vec<Token>, ParseError>`: public entrypoint. It normalizes line endings then lexes.
+
+**State machine states**:
+
+* `Start` — dispatch on char:
+
+  * whitespace → consume and skip/canonicalize
+  * `/` → could be comment (`//` or `/*`)
+  * `"` or `'` → parse string/char literal
+  * digit → numeric literal (handle hex, bin, octal, decimals, underscores)
+  * identifier start → identifier
+  * operator/symbol/delimiter → match longest possible operator (longest-match rule)
+  * EOF → emit Eof token
+* **Longest-match** rule for multi-char operators (e.g., `==`, `!=`, `->`, `::`) implemented with deterministic precedence list.
+
+**Comment parsing**:
+
+* `//` single line: capture text until `\n` (normalize internal whitespace per policy).
+* `/* ... */` block comments: support **nested** comments. Implement using integer nesting counter — every time you see `/*` inside block, increment; on `*/` decrement. If EOF before close → `ParseError::Lexical`.
+* Canonicalize comment contents: trim leading/trailing whitespace, normalize line endings to LF, collapse multiple consecutive whitespace chars into a single space (but keep `\n` if multi-line comment? decide based on policy — choose to normalize internal whitespace but keep newlines as `\n` where originally present to maintain multi-line info).
+
+**String/char literals**:
+
+* Accept quotes and escapes, support Unicode escapes `\u{...}`, `\x..`, `\n`, `\t`, `\\`, `\"`.
+* If EOF before closing quote → `ParseError::Lexical { message: "unterminated string", span }`.
+* Provide canonical representation of string contents (resolve escapes to actual codepoints), and keep `raw` for diagnostics.
+
+**Numbers**:
+
+* Support `0x`, `0b`, `0o` prefix lexing with underscores allowed for readability.
+* For floats, support exponent `e/E`, decimal point.
+* Produce a `canonical_value` string that removes underscores and normalizes case of hex digits.
+
+**Operators and punctuation**:
+
+* Implement longest-match table (ordered slice) and deterministic scanning. Example sorted list: `["::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "<<", ">>", "+", "-", "*", "/", "%", "<", ">", "=", "!", "&", "|", "^", "~", "?", ":" ]`.
+* For single-character delimiters like parentheses, just emit `Delimiter`.
+
+**Position/spans**:
+
+* Spans refer to indices in the **normalized source** (after CRLF→LF) — return these in tokens.
+
+**Determinism rules**:
+
+* Never rely on `HashMap` iteration ordering; use `Vec` and fixed ordering when matching operators.
+* Avoid locale-based casing; do not call locale-specific APIs.
+
+---
+
+## Example `tokenize()` signature
+
+```rust
+pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
+    let normalized = normalize_line_endings(input);
+    let mut lexer = Lexer::new(&normalized);
+    lexer.tokenize_all()
+}
+```
+
+---
+
+## Edge cases & their required behavior (explicit)
+
+* **Nested block comments**: supported. `/* /* nested */ still open */` → valid.
+* **Unterminated block comment**: `ParseError::Lexical` with span from start of comment to EOF.
+* **EOF in string**: `ParseError::Lexical`.
+* **Invalid escape**: `ParseError::Lexical` with span and message.
+* **Invalid numeric literal**: `ParseError::Lexical`.
+* **Invalid identifier character**: treat as operator/symbol if it matches, otherwise `ParseError::Lexical`.
+* **Invalid UTF-8 bytes**: `tokenize()` accepts `&str` so invalid UTF-8 should be rejected before; provide helper `tokenize_bytes(bytes: &[u8]) -> Result<_, ParseError>` which tries `std::str::from_utf8` and returns a lexical error if invalid.
+* **Huge input**: Lexer must not use recursion that can overflow. Use loops and counters.
+
+---
+
+## Unit tests — requirements & example tests
+
+**Goal**: at least **50** focused unit tests across scenarios. Tests must run with `--test-threads=1` to ensure deterministic order.
+
+### Suggested test categories (with examples; implement 50+ tests across these)
+
+1. **Basic tokens** (10 tests)
+
+   * `let x = 1;` → tokens: Identifier `let`, Identifier `x`, Operator `=`, IntegerLiteral `1`, Delimiter `;`, Eof.
+   * Parentheses, braces, commas, semicolons.
+2. **Identifiers & Unicode** (6 tests)
+
+   * ASCII identifiers.
+   * Unicode identifier start/continue: `π_radius`, `变量`.
+   * Identifiers with combining marks.
+3. **Numeric literals** (6 tests)
+
+   * Decimal ints, underscores: `1_000`.
+   * Hex `0xFF`, bin `0b1010`, octal `0o755`.
+   * Floats: `3.14`, `1e10`, `1.2e-3`.
+4. **String & char literals** (8 tests)
+
+   * Simple `"hello"`, `'a'`.
+   * Escapes `"\n\t\\\""` and `'\n'`.
+   * Unicode escapes `"\u{1F600}"`.
+   * Unterminated strings → lexical error.
+5. **Comments** (6 tests)
+
+   * Single-line `// comment` removed or emitted as canonical `Comment` token.
+   * Block comment `/* abc */`.
+   * Nested block comments `/* outer /* inner */ outer */`.
+   * Unterminated block comment → error.
+6. **Operators & longest-match** (4 tests)
+
+   * Multi-char operators `==`, `!=`, `->`, `::`.
+   * Combined operators like `+=`.
+7. **Whitespace normalization** (4 tests)
+
+   * CRLF → LF conversion test.
+   * Multiple spaces → same token stream as single space.
+8. **Complex sample files** (6 tests)
+
+   * Small program with mixed tokens to assert full token stream equals expected.
+9. **Determinism tests** (2 tests)
+
+   * Same source with different whitespace/comment formatting produce identical token streams.
+   * Run twice to ensure same output.
+
+### Example unit test (Rust)
+
+```rust
+#[test]
+fn test_basic_let() {
+    let src = "let x = 1;";
+    let tokens = tokenize(src).expect("lex");
+    let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            &TokenKind::Identifier("let".to_string()),
+            &TokenKind::Identifier("x".to_string()),
+            &TokenKind::Operator("=".to_string()),
+            &TokenKind::IntegerLiteral { raw: "1".into(), canonical_value: "1".into() },
+            &TokenKind::Delimiter(';'),
+            &TokenKind::Eof
+        ]
+    );
+}
+```
+
+---
+
+## Example deterministic test to compare token streams from differently formatted input
+
+```rust
+#[test]
+fn test_canonicalization_comments_whitespace() {
+    let a = "let x=1; // comment\n";
+    let b = "let   x  = 1 ;/* comment */";
+    let ta = tokenize(a).unwrap();
+    let tb = tokenize(b).unwrap();
+    assert_eq!(ta, tb, "Token streams must be identical");
+}
+```
+
+---
+
+## Validation script / CI
+
+**Local validation**:
+
+```bash
+cd glyph_lexer
+cargo test --package glyph_lexer -- --test-threads=1
+```
+
+**GitHub Actions CI snippet**
+
+```yaml
+name: Rust CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run tests
+        run: cargo test --package glyph_lexer -- --test-threads=1
+```
+
+---
+
+## Performance & safety notes
+
+* Lexer should be O(n) over input characters.
+* Avoid allocating large intermediate strings; reserve capacity where possible.
+* For canonicalization (e.g., numeric underscore removal), use a small temporary `String` and only allocate once per literal.
+* Use `unicode-xid` crate for robust identifier rules.
+* For maximum speed later, consider `memchr`-based fast scanning for ASCII-heavy tokens, but first deliver a correct clear implementation.
+
+---
+
+## Deliverable checklist (what to submit)
+
+* `glyph_lexer` crate folder under workspace or stand-alone:
+
+  * `src/token.rs` — full definitions
+  * `src/error.rs` — ParseError definitions
+  * `src/lexer.rs` — full deterministic lexer implementation
+  * `src/lib.rs` — `pub use` of API
+  * `tests/` — at least 50 named unit tests (organized by category)
+  * `Cargo.toml` — dependencies (`unicode-xid = "0.2"`, `serde` optional for debugging)
+  * `README.md` — canonicalization rules and examples
+  * CI config (optional) — GitHub Actions YAML
+* All tests pass with `cargo test --package glyph_lexer -- --test-threads=1`.
+* Documented API: `pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError>`, plus optional `tokenize_bytes(bytes: &[u8])`.
+
+---
+
+## Example API documentation snippet (for README)
+
+> `tokenize(input: &str) -> Result<Vec<Token>, ParseError>`
+> Returns a deterministic vector of tokens. Input is normalized (CRLF→LF). Token spans are byte offsets in the normalized input. Comments are emitted as `TokenKind::Comment` with canonicalized content. Identifiers are Unicode-aware (uses `unicode-xid`).
+
+---
+
+## Implementation timeline (single-pass delivery plan)
+
+* **Day 1**: Create crate skeleton, `Token`/`ParseError` types, line-ending normalizer.
+* **Day 2**: Implement identifier, number, operator, delimiter scanning.
+* **Day 3**: Implement string/char literal parsing, escape sequences.
+* **Day 4**: Implement comment parsing with nested block comments and canonicalization.
+* **Day 5**: Implement canonicalization rules & spans; add 30 core unit tests.
+* **Day 6**: Add remaining tests to reach 50+, add deterministic tests and CI config, run and fix failures until 100% pass.
+
+*(If you prefer, the implementer can skip the timeline and implement in fewer passes; timeline is advisory.)*
+
+---
+
+## Helpful implementation tips & gotchas
+
+* Because `&str` is valid UTF-8, invalid UTF-8 must be detected before calling `tokenize`; provide a bytes variant or check upstream.
+* Use `char_indices()` to compute byte offsets for spans correctly when normalizing.
+* Keep operations deterministic: sorting operator list by length then lexicographically (consistent order) for longest-match.
+* Test subtle Unicode cases: combining marks, zero-width joiners, and surrogate-like sequences.
+* Make all error messages consistent and easily machine-parseable (no localized strings).
+* Remember to run tests with `--test-threads=1` in CI to catch non-determinism bugs.
+
+---
+
+## Example minimal code snippet for starting the lexer loop
+
+```rust
+fn lex_loop(&mut self) -> Result<Vec<Token>, ParseError> {
+    let mut tokens = Vec::new();
+    loop {
+        let (pos, ch) = match self.peek_char() {
+            Some(p) => p,
+            None => {
+                tokens.push(Token::new(TokenKind::Eof, self.cur_pos, self.cur_pos));
+                break;
+            }
+        };
+        match ch {
+            c if c.is_whitespace() => { self.consume_whitespace(); continue; }
+            '/' => {
+                if self.matches("/*") {
+                    self.lex_block_comment()?;
+                    continue;
+                } else if self.matches("//") {
+                    self.lex_line_comment();
+                    continue;
+                } else {
+                    tokens.push(self.lex_operator()?);
+                }
+            }
+            '"' => { tokens.push(self.lex_string()?); }
+            '\'' => { tokens.push(self.lex_char()?); }
+            c if unicode_xid::UnicodeXID::is_xid_start(c) || c == '_' => {
+                tokens.push(self.lex_identifier());
+            }
+            c if c.is_ascii_digit() => { tokens.push(self.lex_number()?); }
+            // operators, delimiters
+            _ => {
+                if let Some(op) = self.match_operator() {
+                    tokens.push(op);
+                } else {
+                    return Err(ParseError::lexical(format!("Unexpected char {}", ch), Some((pos,pos+ch.len_utf8()))));
+                }
+            }
+        }
+    }
+    Ok(tokens)
+}
+```
+
+---
+
+## Acceptance criteria (validate these to close the work order)
+
+1. `cargo test --package glyph_lexer -- --test-threads=1` runs and **all tests** pass.
+2. Two or more differently-formatted but semantically-equal source files produce **identical** `Vec<Token>` (deterministic canonicalization).
+3. Nested comments handled correctly; unterminated literal/comment returns `ParseError::Lexical` with helpful span.
+4. API documentation present in README describing canonicalization decisions and `Span` semantics.
+
+---
+
+If you want, I can:
+
+* generate the initial `token.rs` + `error.rs` + `lib.rs` + a first-pass `lexer.rs` file (complete code) ready to drop into a repo, **or**
+* generate the full set of unit test source files (names + contents) to reach 50+ tests.
+
+Which would you like me to produce next? (If you want the code, I’ll produce the full Rust source files in the next message.)

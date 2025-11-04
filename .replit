@@ -12,15 +12,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "test-capsule-core"
+args = "test-all"
 
 [[workflows.workflow]]
-name = "test-capsule-core"
+name = "test-all"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cargo test -- --nocapture"
+args = "cargo test --workspace -- --nocapture"
 
 [workflows.workflow.metadata]
 outputType = "console"

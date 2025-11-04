@@ -1,0 +1,10 @@
+mod lex_basic;
+mod lex_comments;
+mod lex_complex;
+mod lex_determinism;
+mod lex_edge_cases;
+mod lex_identifiers;
+mod lex_numbers;
+mod lex_operators;
+mod lex_strings;
+mod lex_whitespace;
