@@ -3,3 +3,24 @@ modules = ["rust-stable"]
 expertMode = true
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test-capsule-core"
+
+[[workflows.workflow]]
+name = "test-capsule-core"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo test -- --nocapture"
+
+[workflows.workflow.metadata]
+outputType = "console"
