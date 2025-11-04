@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Expression {
@@ -73,11 +73,11 @@ pub enum Pattern {
     },
 }
 
-pub type Bindings = HashMap<String, Expression>;
+pub type Bindings = BTreeMap<String, Expression>;
 pub type MatchResult = Vec<Bindings>;
 
 pub fn match_pattern(expr: &Expression, pattern: &Pattern) -> MatchResult {
-    let mut bindings = HashMap::new();
+    let mut bindings = BTreeMap::new();
     if match_pattern_internal(expr, pattern, &mut bindings) {
         vec![bindings]
     } else {
@@ -220,18 +220,21 @@ fn match_constructor_application(
     bindings: &mut Bindings,
 ) -> bool {
     if args.len() == 1 {
-        if let Expression::Apply { func, arg } = expr {
-            if let Expression::Var(func_name) = func.as_ref() {
-                if func_name == name {
-                    return match_pattern_internal(arg, &args[0], bindings);
+        match expr {
+            Expression::Apply { func, arg } | Expression::LinearApply { func, arg } => {
+                if let Expression::Var(func_name) = func.as_ref() {
+                    if func_name == name {
+                        return match_pattern_internal(arg, &args[0], bindings);
+                    }
                 }
             }
+            _ => {}
         }
     } else if args.len() > 1 {
         let mut current = expr;
         let mut matched_args = Vec::new();
         
-        while let Expression::Apply { func, arg } = current {
+        while let Expression::Apply { func, arg } | Expression::LinearApply { func, arg } = current {
             matched_args.push(arg.as_ref());
             current = func.as_ref();
         }
@@ -508,6 +511,72 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].get("x"), Some(&int(1)));
         assert_eq!(results[0].get("y"), Some(&int(2)));
+    }
+
+    #[test]
+    fn test_constructor_pattern_with_linear_apply_one_arg() {
+        let expr = Expression::LinearApply {
+            func: Box::new(var("Some")),
+            arg: Box::new(int(42)),
+        };
+        let pattern = Pattern::Constructor {
+            name: "Some".to_string(),
+            args: vec![Pattern::Var("x".to_string())],
+        };
+        
+        let results = match_pattern(&expr, &pattern);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].get("x"), Some(&int(42)));
+    }
+
+    #[test]
+    fn test_constructor_pattern_with_linear_apply_multiple_args() {
+        let expr = Expression::LinearApply {
+            func: Box::new(Expression::LinearApply {
+                func: Box::new(var("Pair")),
+                arg: Box::new(int(1)),
+            }),
+            arg: Box::new(int(2)),
+        };
+        let pattern = Pattern::Constructor {
+            name: "Pair".to_string(),
+            args: vec![
+                Pattern::Var("x".to_string()),
+                Pattern::Var("y".to_string()),
+            ],
+        };
+        
+        let results = match_pattern(&expr, &pattern);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].get("x"), Some(&int(1)));
+        assert_eq!(results[0].get("y"), Some(&int(2)));
+    }
+
+    #[test]
+    fn test_constructor_pattern_with_mixed_apply() {
+        let expr = apply(
+            Expression::LinearApply {
+                func: Box::new(var("Triple")),
+                arg: Box::new(int(1)),
+            },
+            int(2),
+        );
+        let expr_outer = apply(expr, int(3));
+        
+        let pattern = Pattern::Constructor {
+            name: "Triple".to_string(),
+            args: vec![
+                Pattern::Var("x".to_string()),
+                Pattern::Var("y".to_string()),
+                Pattern::Var("z".to_string()),
+            ],
+        };
+        
+        let results = match_pattern(&expr_outer, &pattern);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].get("x"), Some(&int(1)));
+        assert_eq!(results[0].get("y"), Some(&int(2)));
+        assert_eq!(results[0].get("z"), Some(&int(3)));
     }
 
     #[test]
