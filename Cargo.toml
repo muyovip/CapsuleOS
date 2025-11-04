@@ -1,4 +1,2 @@
-[package]
-name = "capsule-os-build"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["capsule_core"]
