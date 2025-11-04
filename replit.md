@@ -1,12 +1,33 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of two foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of three foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀)
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
+3. **glyph_parser** - Recursive descent parser and AST for GΛLYPH
 
 ## Recent Changes
+
+### 2025-11-04: GΛLYPH Parser Implementation (Work Order 3) ✓
+Implemented complete recursive descent parser for the GΛLYPH language:
+
+**Features:**
+- Complete AST with Expression, Literal, Pattern, and MatchArm types
+- Lexer with support for: literals, keywords, lambda (λ), linear arrow (⊸), comments (#), negative numbers
+- Recursive descent parser with proper precedence handling
+- Pattern matching with wildcards, variables, literals, tuples, and constructors
+- Guard expressions in match arms
+- Canonical CBOR serialization/deserialization
+- Public API: `parse(input: &str) -> Result<Expression, ParseError>`
+
+**Key Implementation Details:**
+- Parse chain: parse_expression → parse_let → parse_match → parse_lambda → parse_application → parse_primary
+- Match subjects restricted to primary expressions to avoid ambiguity with match arm braces
+- Record literals fully supported as function arguments: `f { x: 1 }`
+- Lambda bodies use full expression parsing to support nested let/match expressions
+
+**Test Status**: All 36 tests passing (120 comprehensive test cases)
 
 ### 2025-11-04: Lexer Bug Fixes - All Tests Passing ✓
 Fixed three critical position tracking bugs in the glyph_lexer:
@@ -53,13 +74,43 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 - Comprehensive error reporting with spans
 - 92 unit tests covering all edge cases
 
+### glyph_parser (36/36 tests ✓)
+- Complete AST definition:
+  - Expression: Literal, Var, Lambda, Apply, LinearApply, Let, Match, Tuple, List, Record
+  - Literal: Int, Float, String, Bool, Unit
+  - Pattern: Wildcard, Var, Literal, Tuple, Constructor
+  - MatchArm: pattern + optional guard + body
+- Lexer supporting GΛLYPH syntax:
+  - Keywords: let, in, match, if, then, else, true, false
+  - Special symbols: λ (lambda), ⊸ (linear arrow), # (comments)
+  - All numeric types including negative numbers
+  - String escapes: \n, \t, \r, \\, \"
+- Recursive descent parser with precedence:
+  - Let bindings with proper scoping
+  - Pattern matching with guards
+  - Lambda abstractions
+  - Function application (both regular and linear)
+  - Tuples, lists, and records
+- Canonical CBOR serialization via ciborium
+- 36 unit tests including 120 comprehensive cases
+- All round-trip serialization tests passing
+
 ## Dependencies
+
+### capsule_core
 - `ed25519-dalek = "2.1"` - Ed25519 signatures
 - `serde = { version = "1", features = ["derive"] }` - Serialization
 - `serde_cbor = "0.11"` - CBOR encoding
 - `sha2 = "0.10"` - SHA-256 hashing
 - `rand = "0.8"` - Random number generation
+
+### glyph_lexer
 - `unicode-xid = "0.2"` - Unicode identifier validation
+
+### glyph_parser
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `ciborium = "0.2"` - CBOR serialization
+- `thiserror = "1.0"` - Error handling
 
 ## Testing
 All tests must run with `--test-threads=1` for deterministic validation:
@@ -68,7 +119,19 @@ cargo test --workspace -- --test-threads=1
 ```
 
 ## Design Decisions
+
+### glyph_lexer
 - **Comment tokens**: Emits canonicalized Comment tokens rather than stripping them completely
-- **Deterministic behavior**: All cryptographic operations and lexing are deterministic for reproducibility
-- **Position tracking**: Lexer maintains accurate byte-offset spans for all tokens
-- **Error handling**: Comprehensive ParseError with position information
+- **Position tracking**: Maintains accurate byte-offset spans for all tokens
+- **Deterministic behavior**: All lexing operations are deterministic for reproducibility
+
+### glyph_parser
+- **Match subject restriction**: Match subjects limited to primary expressions to avoid ambiguity with match arm braces. Complex subjects require parentheses: `match (f x) { ... }`
+- **Record arguments**: Fully supported in function applications: `f { x: 1 }`  
+- **Lambda body parsing**: Uses full expression parsing to support nested let/match expressions
+- **Error handling**: Comprehensive ParseError and LexError types with descriptive messages
+- **Canonical serialization**: CBOR-based deterministic serialization for AST persistence
+
+### capsule_core
+- **Deterministic behavior**: All cryptographic operations are deterministic for reproducibility
+- **Error handling**: Comprehensive error types for verification failures
