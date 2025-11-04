@@ -61,15 +61,155 @@ pub fn canonical_cbor<T: Serialize>(data: &T) -> Result<Vec<u8>, String> {
 }
 
 // ============================================================================
-// Content Hashing with GlyphV1 Prefix
+// Content Hashing with Prefixes
 // ============================================================================
 
+/// Compute content-addressable hash with a type-specific prefix.
+/// Returns format: "prefix:hexhash"
+pub fn compute_content_hash_with_prefix(prefix: &str, cbor_data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(cbor_data);
+    let hash = hasher.finalize();
+    format!("{}:{}", prefix, hex::encode(hash))
+}
+
+/// Legacy function for backward compatibility (GlyphV1 prefix, no prefix in output)
 pub fn compute_content_hash(cbor_data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"GlyphV1");
     hasher.update(cbor_data);
     let hash = hasher.finalize();
     hex::encode(hash)
+}
+
+// ============================================================================
+// Work Order 4: Content-Addressable Traits
+// ============================================================================
+
+/// Trait for deterministic canonical serialize to bytes (CBOR).
+pub trait CanonicalSerialize {
+    /// Produce deterministic canonical CBOR bytes for this value.
+    /// Implementations should be stable and deterministic: identical input → identical bytes.
+    fn canonical_serialize(&self) -> Vec<u8>;
+}
+
+/// Trait for computing content-addressable hash string for an object.
+pub trait ContentAddressable {
+    /// Return a prefixed content hash string (e.g. "GlyphV1:abcdef...").
+    fn content_hash(&self) -> String;
+}
+
+// ============================================================================
+// Work Order 4: Domain Types (Glyph, Expression, GraphNode)
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Glyph {
+    pub name: String,
+    pub version: u32,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Expression {
+    pub expr_type: String,
+    pub data: Vec<u8>,
+    pub children: Vec<ExpressionRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphNode {
+    pub id: String,
+    pub label: Option<String>,
+    pub glyph: Option<GlyphRef>,
+    pub expression: Option<ExpressionRef>,
+    pub edges: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlyphRef {
+    pub name: String,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpressionRef {
+    pub expr_type: String,
+    pub short_digest: Option<String>,
+}
+
+// ============================================================================
+// CanonicalSerialize Implementations
+// ============================================================================
+
+impl CanonicalSerialize for Glyph {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("Glyph serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for Expression {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("Expression serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for GraphNode {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("GraphNode serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for GlyphRef {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("GlyphRef serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for ExpressionRef {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("ExpressionRef serialization should not fail")
+    }
+}
+
+// ============================================================================
+// ContentAddressable Implementations
+// ============================================================================
+
+impl ContentAddressable for Glyph {
+    fn content_hash(&self) -> String {
+        let ser = self.canonical_serialize();
+        compute_content_hash_with_prefix("GlyphV1", &ser)
+    }
+}
+
+impl ContentAddressable for Expression {
+    fn content_hash(&self) -> String {
+        let ser = self.canonical_serialize();
+        compute_content_hash_with_prefix("ExprV1", &ser)
+    }
+}
+
+impl ContentAddressable for GraphNode {
+    fn content_hash(&self) -> String {
+        let ser = self.canonical_serialize();
+        compute_content_hash_with_prefix("NodeV1", &ser)
+    }
+}
+
+impl ContentAddressable for GlyphRef {
+    fn content_hash(&self) -> String {
+        let ser = self.canonical_serialize();
+        compute_content_hash_with_prefix("GlyphV1", &ser)
+    }
+}
+
+impl ContentAddressable for ExpressionRef {
+    fn content_hash(&self) -> String {
+        let ser = self.canonical_serialize();
+        compute_content_hash_with_prefix("ExprV1", &ser)
+    }
 }
 
 // ============================================================================
@@ -300,5 +440,115 @@ mod tests {
 
         assert_eq!(cbor1, cbor2, "CBOR encoding must be deterministic");
         println!("✓ CBOR encoding is deterministic");
+    }
+
+    // ========================================================================
+    // Work Order 4 Tests
+    // ========================================================================
+
+    #[test]
+    fn test_glyph_canonical_serialize_and_hash_prefix() {
+        let g = Glyph {
+            name: "example".to_string(),
+            version: 1,
+            payload: vec![1, 2, 3, 4],
+        };
+        let bytes = g.canonical_serialize();
+        assert!(!bytes.is_empty(), "serialized glyph must be non-empty");
+        let hash = g.content_hash();
+        assert!(hash.starts_with("GlyphV1:"), "prefix must be present");
+        // ensure deterministic: repeated calls equal
+        let hash2 = g.content_hash();
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_expression_hash_determinism() {
+        let e = Expression {
+            expr_type: "literal".to_string(),
+            data: vec![10, 20],
+            children: vec![ExpressionRef {
+                expr_type: "child".to_string(),
+                short_digest: None,
+            }],
+        };
+        let h1 = e.content_hash();
+        let h2 = e.content_hash();
+        assert_eq!(h1, h2);
+        assert!(h1.starts_with("ExprV1:"));
+    }
+
+    #[test]
+    fn test_graphnode_hash_includes_nested() {
+        let glyph_ref = GlyphRef {
+            name: "g".to_string(),
+            version: 7,
+        };
+        let expr_ref = ExpressionRef {
+            expr_type: "op".to_string(),
+            short_digest: Some("abc".to_string()),
+        };
+        let node = GraphNode {
+            id: "node-1".to_string(),
+            label: Some("first".to_string()),
+            glyph: Some(glyph_ref.clone()),
+            expression: Some(expr_ref.clone()),
+            edges: vec!["node-2".to_string()],
+        };
+
+        let node_hash = node.content_hash();
+        assert!(node_hash.starts_with("NodeV1:"));
+        // Mutating clones should produce different hash if content changes
+        let mut node2 = node.clone();
+        node2.id = "node-1-changed".to_string();
+        let node2_hash = node2.content_hash();
+        assert_ne!(node_hash, node2_hash);
+    }
+
+    #[test]
+    fn test_prefixes_are_different_for_same_bytes() {
+        let gref = GlyphRef {
+            name: "x".to_string(),
+            version: 42,
+        };
+        let eref = ExpressionRef {
+            expr_type: "x".to_string(),
+            short_digest: None,
+        };
+
+        let gh = gref.content_hash();
+        assert!(gh.starts_with("GlyphV1:"));
+        let eh = eref.content_hash();
+        assert!(eh.starts_with("ExprV1:"));
+        assert_ne!(gh, eh, "different prefixes should produce different hashes");
+    }
+
+    #[test]
+    fn test_compute_content_hash_with_prefix_helper() {
+        let g = Glyph {
+            name: "x".to_string(),
+            version: 1,
+            payload: vec![],
+        };
+        let ser = g.canonical_serialize();
+        let direct = compute_content_hash_with_prefix("GlyphV1", &ser);
+        let via_trait = g.content_hash();
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn test_deterministic_for_equivalent_instances() {
+        let a = Glyph {
+            name: "ident".to_string(),
+            version: 3,
+            payload: vec![9, 8, 7],
+        };
+        let b = Glyph {
+            name: "ident".to_string(),
+            version: 3,
+            payload: vec![9, 8, 7],
+        };
+        assert_eq!(a.canonical_serialize(), b.canonical_serialize());
+        assert_eq!(a.content_hash(), b.content_hash());
     }
 }
