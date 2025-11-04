@@ -2,29 +2,3 @@
 name = "capsule-os-build"
 version = "0.1.0"
 edition = "2021"
-authors = ["CapsuleOS Team"]
-description = "Core logic and toolchain for the CapsuleOS meta-operating system"
-license = "MIT"
-
-[dependencies]
-clap = { version = "4.5", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
-thiserror = "1.0"
-tokio = { version = "1.41", features = ["full"] }
-
-[dev-dependencies]
-criterion = "0.5"
-
-[[bin]]
-name = "capsule"
-path = "src/main.rs"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-
-[profile.dev]
-opt-level = 0
