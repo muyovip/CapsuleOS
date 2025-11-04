@@ -129,18 +129,27 @@ fn canonical_serialize_node(node: &GraphNode) -> Vec<u8> {
 impl GenesisGraph {
     /// Create a new GenesisGraph with a root node
     pub fn new(root_node: GraphNode) -> Result<Self, GraphError> {
-        let root_hash = compute_root_hash(&root_node);
+        // Compute canonical root hash (with empty root_ref for determinism)
+        let mut canonical_node = root_node.clone();
+        canonical_node.root_ref = String::new();
+        let root_hash = compute_root_hash(&canonical_node);
         
-        // Verify root_ref points to itself (root is self-referential)
-        if root_node.root_ref != root_hash {
+        // Accept root nodes with either:
+        // 1. Empty root_ref (canonical), or  
+        // 2. root_ref matching the canonical hash (backward compatibility)
+        if !root_node.root_ref.is_empty() && root_node.root_ref != root_hash {
             return Err(GraphError::RootRefMismatch {
                 expected: root_hash.clone(),
                 actual: root_node.root_ref.clone(),
             });
         }
         
+        // Normalize: store node with canonical empty root_ref
+        let mut normalized_node = root_node;
+        normalized_node.root_ref = String::new();
+        
         let mut nodes = HashMap::new();
-        nodes.insert(root_hash.clone(), root_node);
+        nodes.insert(root_hash.clone(), normalized_node);
         
         Ok(Self {
             nodes,
@@ -467,18 +476,12 @@ pub fn create_root_node() -> GraphNode {
     
     let data = Expression::Literal(0); // Genesis value
     
-    let node = GraphNode {
+    // Root node has empty root_ref (it's the genesis, no parent)
+    GraphNode {
         id: "⊙₀".to_string(),
-        root_ref: String::new(), // Will be set after hash computation
+        root_ref: String::new(),
         data,
         metadata,
-    };
-    
-    // Compute hash and create final node
-    let temp_hash = compute_root_hash(&node);
-    GraphNode {
-        root_ref: temp_hash,
-        ..node
     }
 }
 
@@ -503,9 +506,11 @@ mod tests {
         let root = create_root_node();
         assert_eq!(root.id, "⊙₀");
         assert_eq!(root.metadata.lineage_depth, 0);
+        assert_eq!(root.root_ref, ""); // Root has empty root_ref
         
+        // Verify hash can be computed
         let root_hash = compute_root_hash(&root);
-        assert_eq!(root.root_ref, root_hash);
+        assert!(!root_hash.is_empty());
     }
 
     #[test]
@@ -513,7 +518,8 @@ mod tests {
         let root = create_root_node();
         let graph = GenesisGraph::new(root.clone()).unwrap();
         
-        assert_eq!(graph.root_hash(), &root.root_ref);
+        // Root has empty root_ref, but graph computes a hash for it
+        assert!(!graph.root_hash().is_empty());
         assert_eq!(graph.nodes().len(), 1);
         assert!(graph.get_node(graph.root_hash()).is_some());
     }
@@ -728,7 +734,8 @@ mod tests {
         let root = create_root_node();
         let mut graph = GenesisGraph::new(root.clone()).unwrap();
         
-        let result = graph.delete_node(graph.root_hash());
+        let root_hash = graph.root_hash().clone();
+        let result = graph.delete_node(&root_hash);
         assert!(matches!(result, Err(GraphError::InvalidRootHash)));
     }
 
@@ -1017,7 +1024,7 @@ mod tests {
         println!("  Root hash: {}", graph.root_hash());
         
         // Create a chain of nodes
-        let mut hashes = Vec::new();
+        let mut hashes: Vec<Hash> = Vec::new();
         for i in 1..=10 {
             let node = GraphNode {
                 id: format!("node_{}", i),
@@ -1038,8 +1045,9 @@ mod tests {
             
             // Link to previous node
             if i > 1 {
+                let prev_idx = (i - 2) as usize;
                 graph.link_nodes(
-                    hashes[i - 2].clone(),
+                    hashes[prev_idx].clone(),
                     hash.clone(),
                     EdgeType::Derivation,
                 ).unwrap();
