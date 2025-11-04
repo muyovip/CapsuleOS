@@ -1,0 +1,344 @@
+Please implement Work Order 4 by adding the content-addressable hashing functionality to the existing `capsule_core` crate.
+
+**Dependencies to add to capsule_core/Cargo.toml:**
+```toml
+serde_cbor = "0.11"
+
+Implementation Code to integrate:
+Nice — I implemented Work Order 4 as a self-contained Rust module you can drop into your capsule_core crate. It provides:
+ContentAddressable and CanonicalSerialize traits.
+Implementations for Glyph, Expression, and GraphNode.
+Deterministic CBOR serialization (using serde_cbor::to_vec) and SHA-256 hashing with explicit prefixes (GlyphV1, ExprV1, NodeV1).
+compute_content_hash helper.
+Unit tests that validate deterministic content hashes and prefixing.
+Note on CBOR determinism: this implementation uses serde_cbor::to_vec and relies on Rust/Serde's deterministic field ordering for structs (struct fields serialize in declaration order). If you plan to serialize arbitrary Map values or require full RFC-level deterministic CBOR across different serializers, consider switching to a CBOR implementation / canonicalizer that guarantees RFC-8949 deterministic encoding for maps (e.g., a specialized canonical CBOR crate). For many structured types encoded as structs this approach is deterministic and stable across platforms.
+
+Files to add / modify
+Add this to your capsule_core crate (replace or integrate with existing files as needed). I provide a single lib.rs that contains the traits, types and tests.
+Cargo.toml additions (inside capsule_core/Cargo.toml):
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0.11"
+sha2 = "0.10"
+hex = "0.4"
+
+
+src/lib.rs
+//! capsule_core :: content-addressable canonical serialization and hashing
+//! Work Order 4 implementation: ContentAddressable, CanonicalSerialize, compute_content_hash
+
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use hex::encode as hex_encode;
+
+/// Trait: deterministic canonical serialize to bytes (CBOR).
+/// Note: signature required by work order: returns Vec<u8>.
+pub trait CanonicalSerialize {
+    /// Produce deterministic canonical CBOR bytes for this value.
+    /// Implementations should be stable and deterministic: identical input -> identical bytes.
+    fn canonical_serialize(&self) -> Vec<u8>;
+}
+
+/// Trait: compute content addressable hash string for an object.
+pub trait ContentAddressable {
+    /// Return a prefixed content hash string (e.g. "GlyphV1:abcdef...").
+    fn content_hash(&self) -> String;
+}
+
+/// Helper function to compute the prefixed SHA-256 hash over the provided bytes.
+/// The hash input is: prefix_bytes || serialized_bytes
+/// Returns: "<prefix>:<hexlower>"
+pub fn compute_content_hash(prefix: &str, serialized_bytes: &[u8]) -> String {
+    // Compute SHA-256 over prefix bytes followed by the serialized bytes.
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(serialized_bytes);
+    let result = hasher.finalize();
+    let hex = hex_encode(result);
+    format!("{}:{}", prefix, hex)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Example domain types: Glyph, Expression, GraphNode
+//
+// These are simplified example structs intended to demonstrate canonical
+// serialization and content-hash computation. Replace/extend fields to match
+// your actual capsule_core domain model.
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Glyph {
+    // keep fields private if you want stricter immutability externally
+    pub name: String,
+    pub version: u32,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Expression {
+    pub expr_type: String,
+    pub data: Vec<u8>,
+    pub children: Vec<ExpressionRef>,
+}
+
+/// A minimal GraphNode structure that references Glyphs or Expressions.
+/// For demonstration we embed optional glyph/expression IDs (or content) inline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GraphNode {
+    pub id: String,
+    pub label: Option<String>,
+    pub glyph: Option<GlyphRef>,
+    pub expression: Option<ExpressionRef>,
+    pub edges: Vec<String>, // neighbor node ids
+}
+
+/// Small wrapper/reference types to show nested serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GlyphRef {
+    // If you have stable external IDs use them; here we include content inline
+    // to make hashing deterministic based on content.
+    pub name: String,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ExpressionRef {
+    pub expr_type: String,
+    pub short_digest: Option<String>, // optional precomputed digest or summary
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// CanonicalSerialize implementations
+//
+// Use serde_cbor::to_vec to generate CBOR bytes. We `expect` because these
+// types derive Serialize and should not fail to serialize; failing indicates
+// a programming error rather than recoverable runtime condition.
+////////////////////////////////////////////////////////////////////////////////
+
+impl CanonicalSerialize for Glyph {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        // Use serde_cbor to produce CBOR bytes deterministically for structs
+        // (field ordering is struct-declaration order). Panic on serialization
+        // error (should not happen for derived Serialize).
+        serde_cbor::to_vec(self).expect("Glyph serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for Expression {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("Expression serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for GraphNode {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("GraphNode serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for GlyphRef {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("GlyphRef serialization should not fail")
+    }
+}
+
+impl CanonicalSerialize for ExpressionRef {
+    fn canonical_serialize(&self) -> Vec<u8> {
+        serde_cbor::to_vec(self).expect("ExpressionRef serialization should not fail")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// ContentAddressable implementations
+//
+// Each implementation uses compute_content_hash with the required prefix.
+////////////////////////////////////////////////////////////////////////////////
+
+impl ContentAddressable for Glyph {
+    fn content_hash(&self) -> String {
+        // prefix "GlyphV1" per work order
+        let prefix = "GlyphV1";
+        let ser = self.canonical_serialize();
+        compute_content_hash(prefix, &ser)
+    }
+}
+
+impl ContentAddressable for Expression {
+    fn content_hash(&self) -> String {
+        let prefix = "ExprV1";
+        let ser = self.canonical_serialize();
+        compute_content_hash(prefix, &ser)
+    }
+}
+
+impl ContentAddressable for GraphNode {
+    fn content_hash(&self) -> String {
+        let prefix = "NodeV1";
+        let ser = self.canonical_serialize();
+        compute_content_hash(prefix, &ser)
+    }
+}
+
+impl ContentAddressable for GlyphRef {
+    fn content_hash(&self) -> String {
+        let prefix = "GlyphV1";
+        let ser = self.canonical_serialize();
+        compute_content_hash(prefix, &ser)
+    }
+}
+
+impl ContentAddressable for ExpressionRef {
+    fn content_hash(&self) -> String {
+        let prefix = "ExprV1";
+        let ser = self.canonical_serialize();
+        compute_content_hash(prefix, &ser)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Unit tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_glyph_canonical_serialize_and_hash_prefix() {
+        let g = Glyph {
+            name: "example".to_string(),
+            version: 1,
+            payload: vec![1, 2, 3, 4],
+        };
+        let bytes = g.canonical_serialize();
+        assert!(!bytes.is_empty(), "serialized glyph must be non-empty");
+        let hash = g.content_hash();
+        assert!(hash.starts_with("GlyphV1:"), "prefix must be present");
+        // ensure deterministic: repeated calls equal
+        let hash2 = g.content_hash();
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_expression_hash_determinism() {
+        let e = Expression {
+            expr_type: "literal".to_string(),
+            data: vec![10, 20],
+            children: vec![
+                ExpressionRef { expr_type: "child".to_string(), short_digest: None }
+            ],
+        };
+        let h1 = e.content_hash();
+        let h2 = e.content_hash();
+        assert_eq!(h1, h2);
+        assert!(h1.starts_with("ExprV1:"));
+    }
+
+    #[test]
+    fn test_graphnode_hash_includes_nested() {
+        let glyph_ref = GlyphRef {
+            name: "g".to_string(),
+            version: 7,
+        };
+        let expr_ref = ExpressionRef {
+            expr_type: "op".to_string(),
+            short_digest: Some("abc".to_string()),
+        };
+        let node = GraphNode {
+            id: "node-1".to_string(),
+            label: Some("first".to_string()),
+            glyph: Some(glyph_ref.clone()),
+            expression: Some(expr_ref.clone()),
+            edges: vec!["node-2".to_string()],
+        };
+
+        let node_hash = node.content_hash();
+        assert!(node_hash.starts_with("NodeV1:"));
+        // Mutating clones should produce different hash if content changes
+        let mut node2 = node.clone();
+        node2.id = "node-1-changed".to_string();
+        let node2_hash = node2.content_hash();
+        assert_ne!(node_hash, node2_hash);
+    }
+
+    #[test]
+    fn test_prefixes_are_different_for_same_bytes() {
+        // Create two objects with identical serialized bytes but different type prefixes:
+        // We'll construct GlyphRef and ExpressionRef with identical field values where possible.
+        let gref = GlyphRef {
+            name: "x".to_string(),
+            version: 42,
+        };
+        let eref = ExpressionRef {
+            expr_type: "x".to_string(),
+            short_digest: None,
+        };
+
+        // canonical serialize both
+        let gb = gref.canonical_serialize();
+        let eb = eref.canonical_serialize();
+
+        // They are likely different bytes because struct shapes differ; ensure hash prefixes produce different final strings,
+        // but also ensure our compute_content_hash consistently prefixes.
+        let gh = gref.content_hash();
+        assert!(gh.starts_with("GlyphV1:"));
+        let eh = eref.content_hash();
+        assert!(eh.starts_with("ExprV1:"));
+        assert_ne!(gh, eh, "different prefixes and/or body should not collide in these tests");
+    }
+
+    #[test]
+    fn test_compute_content_hash_helper_matches_trait() {
+        let g = Glyph {
+            name: "x".to_string(),
+            version: 1,
+            payload: vec![],
+        };
+        let ser = g.canonical_serialize();
+        let direct = compute_content_hash("GlyphV1", &ser);
+        let via_trait = g.content_hash();
+        assert_eq!(direct, via_trait);
+    }
+
+    #[test]
+    fn test_deterministic_for_equivalent_instances() {
+        // Build two instances that are field-by-field identical and verify hashes match.
+        let a = Glyph {
+            name: "ident".to_string(),
+            version: 3,
+            payload: vec![9, 8, 7],
+        };
+        let b = Glyph {
+            name: "ident".to_string(),
+            version: 3,
+            payload: vec![9, 8, 7],
+        };
+        assert_eq!(a.canonical_serialize(), b.canonical_serialize());
+        assert_eq!(a.content_hash(), b.content_hash());
+    }
+}
+
+
+How to run the validation tests
+From your workspace root or inside capsule_core:
+cargo test --package capsule_core --test content_hash_tests
+
+If you prefer to run the crate's full test suite:
+cargo test --package capsule_core
+
+(If --test content_hash_tests does not match your test target names, run cargo test --package capsule_corewhich will run the #[cfg(test)] module tests included above.)
+
+Further notes / suggestions
+Canonical CBOR: For absolute RFC-level canonical CBOR (maps sorted bytewise, exact CBOR choices), consider using a purpose-built canonical CBOR library or canonicalizer. The above approach is deterministic for structs and common composed types because Serde emits struct fields in declaration order. If you plan to accept arbitrary HashMap or BTreeMap inputs, use BTreeMap (ordered) or convert maps to a canonical order before serializing.
+Immutability guarantee: Rust's ownership and borrowing already make accidental mutation harder. If you need a runtime guarantee that instances can't be mutated after hashing, you can design a wrapper type that consumes selfwhen producing the hash and returns a read-only handle, or you can cache the hash and panic on attempts to mutate after hashing. I avoided interior mutability in this implementation for clarity.
+Binary size / compactness: If you want more compact CBOR, serde_cbor offers to_vec_packed / packed format features; however packed format uses numeric indices for field names (not portable across schema changes) so be careful.
+Collision resistance: SHA-256 is used; the prefix is not part of the cryptographic input uniqueness beyond changing the hash domain (which is deliberate here to differentiate types). Keep secure handling of digests as needed by your system.
+
+If you'd like, I can:
+Convert struct serializations to guarantee canonical map ordering (e.g., by serializing into serde_cbor::Value and sorting map keys) — recommended if you use HashMap or maps inside types.
+Produce a variant that caches computed hashes on the object (e.g., using an Option<String> with Cell/Mutex) and prevents mutation after caching.
+Adapt the code to an existing capsule_core module layout (if you paste the real Glyph, Expression, and GraphNode definitions I will integrate directly).
+Which follow-up would you like me to do next?
+
+Please ensure the existing capsule_coretests still pass and the new content hash tests are added and validated.
+
