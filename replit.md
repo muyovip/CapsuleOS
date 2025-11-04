@@ -1,13 +1,48 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of three foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of four foundational components:
 
-1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀)
+1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
 3. **glyph_parser** - Recursive descent parser and AST for GΛLYPH
+4. **genesis_graph** - Content-addressable DAG for cryptographic lineage and dependencies
 
 ## Recent Changes
+
+### 2025-11-04: GenesisGraph DAG Implementation (Work Order 5) ✓
+Created complete genesis_graph crate with cryptographic DAG functionality:
+
+**Core Features:**
+- Content-addressable directed acyclic graph (DAG) with cryptographic lineage tracking
+- Root node (⊙₀) creation with backward-compatible hash validation
+- Node insertion with root reference enforcement
+- Edge linking with automatic cycle detection (DFS-based)
+- Topological sorting via Kahn's algorithm
+- Lineage path tracking from root via BFS traversal
+- Node deletion with automatic edge cleanup
+- Canonical CBOR serialization (deterministic, order-independent)
+
+**Data Structures:**
+- `GraphNode`: ID, root reference, Expression data, metadata (timestamp, lineage_depth, tags)
+- `GraphEdge`: from/to hashes with edge types (Dependency, Derivation, Reference)
+- `GenesisGraph`: nodes HashMap, edges Vec, root_hash
+- `GraphError`: 7 error types for comprehensive validation
+
+**Hash Computation:**
+- Root node hash: `GlyphV1:Root:` prefix, computed with empty `root_ref` for determinism
+- Node hash: `GlyphV1:Node:` prefix, includes all node fields
+- Backward compatible: accepts both empty and pre-hashed root_ref values
+- Internal normalization: stores root nodes with empty `root_ref` for consistency
+
+**Key Design Decisions:**
+- Root nodes have empty `root_ref` (they're the genesis, no parent)
+- Validation accepts legacy root nodes with pre-computed `root_ref` for compatibility
+- Cycle detection prevents DAG corruption (no circular dependencies)
+- Self-loops forbidden to maintain acyclic invariant
+- Canonical serialization uses BTreeMap for nodes and sorted edges
+
+**Test Status**: All 18 genesis_graph tests passing (comprehensive coverage)
 
 ### 2025-11-04: Content-Addressable Hashing (Work Order 4) ✓
 Integrated content-addressable hashing functionality into capsule_core:
@@ -71,6 +106,34 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 **Test Status**: All 96 tests passing (92 lexer + 4 capsule_core)
 
 ## Project Architecture
+
+### genesis_graph (18/18 tests ✓)
+**GenesisGraph DAG:**
+- Content-addressable directed acyclic graph (DAG)
+- Root node creation with ⊙₀ symbol and backward-compatible validation
+- Graph operations: insert, delete, link, query
+- Cycle detection via depth-first search (DFS)
+- Topological sort via Kahn's algorithm
+- Lineage path tracking via breadth-first search (BFS)
+- Canonical CBOR serialization with deterministic ordering
+- Comprehensive error handling with 7 error types
+
+**Dependencies:**
+- `serde_cbor = "0.11"` - CBOR serialization
+- `sha2 = "0.10"` - SHA-256 hashing
+- `hex = "0.4"` - Hexadecimal encoding
+- References capsule_core for Expression and ContentAddressable trait
+
+**Test Coverage:**
+- Root node creation and validation
+- Graph creation with backward compatibility
+- Node insertion with root reference enforcement
+- Edge linking with cycle detection
+- Node deletion with edge cleanup
+- Topological sorting (valid DAG and cycle detection)
+- Lineage path tracking from root
+- Canonical serialization stability
+- Comprehensive integration test (11 nodes, 10 edges)
 
 ### capsule_core (10/10 tests ✓)
 **Root Capsule Functionality:**
@@ -148,6 +211,12 @@ All tests must run with `--test-threads=1` for deterministic validation:
 cargo test --workspace -- --test-threads=1
 ```
 
+**Current Test Results: 156 tests passing**
+- capsule_core: 10 tests ✓
+- genesis_graph: 18 tests ✓
+- glyph_lexer: 92 tests ✓
+- glyph_parser: 36 tests ✓
+
 ## Design Decisions
 
 ### glyph_lexer
@@ -168,3 +237,11 @@ cargo test --workspace -- --test-threads=1
 - **Dual CBOR libraries**: Uses `ciborium` for Root Capsule (RFC 8949) and `serde_cbor` for Work Order 4 types
 - **Hash prefixes**: Type-specific prefixes prevent hash collisions across domain types (GlyphV1:, ExprV1:, NodeV1:)
 - **Backward compatibility**: Legacy `compute_content_hash()` preserved for existing Root Capsule code
+
+### genesis_graph
+- **Root node bootstrapping**: Root nodes stored with empty `root_ref` to avoid circular dependency
+- **Backward compatibility**: Accepts both empty and pre-hashed `root_ref` values during graph creation
+- **Deterministic hashing**: Root hash always computed with `root_ref = ""` for consistency
+- **Cycle prevention**: DFS-based cycle detection prevents DAG corruption
+- **Canonical serialization**: BTreeMap for nodes and sorted edges ensures deterministic CBOR output
+- **Hash computation**: Uses `GlyphV1:Root:` and `GlyphV1:Node:` prefixes to distinguish node types
