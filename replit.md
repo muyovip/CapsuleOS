@@ -9,6 +9,25 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 
 ## Recent Changes
 
+### 2025-11-04: Content-Addressable Hashing (Work Order 4) ✓
+Integrated content-addressable hashing functionality into capsule_core:
+
+**New Features:**
+- `ContentAddressable` trait for computing prefixed content hashes
+- `CanonicalSerialize` trait for deterministic CBOR serialization
+- Domain types: `Glyph`, `Expression`, `GraphNode`, `GlyphRef`, `ExpressionRef`
+- `compute_content_hash_with_prefix()` function returning "prefix:hexhash" format
+- Type-specific hash prefixes: GlyphV1, ExprV1, NodeV1
+
+**Implementation Details:**
+- Uses `serde_cbor::to_vec()` for deterministic CBOR serialization
+- Preserves backward compatibility with existing Root Capsule functionality
+- Legacy `compute_content_hash()` still works for existing code
+- All domain types implement both traits with proper prefixes
+- Deterministic hashing: identical input always produces identical hash
+
+**Test Status**: All 10 capsule_core tests passing (4 original + 6 new Work Order 4 tests)
+
 ### 2025-11-04: GΛLYPH Parser Implementation (Work Order 3) ✓
 Implemented complete recursive descent parser for the GΛLYPH language:
 
@@ -53,12 +72,20 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 
 ## Project Architecture
 
-### capsule_core (4/4 tests ✓)
+### capsule_core (10/10 tests ✓)
+**Root Capsule Functionality:**
 - Ed25519 cryptographic signing (ed25519-dalek 2.1)
 - SHA-256 hashing with GlyphV1 prefix
 - Canonical CBOR serialization (deterministic encoding)
 - Root Capsule creation (⊙₀) with signature verification
 - Zero-knowledge proof generation and validation
+
+**Content-Addressable Hashing (Work Order 4):**
+- `ContentAddressable` and `CanonicalSerialize` traits
+- Domain types: `Glyph`, `Expression`, `GraphNode` with references
+- Type-specific hash prefixes (GlyphV1, ExprV1, NodeV1)
+- Deterministic CBOR serialization via serde_cbor
+- Comprehensive testing of hash determinism and prefix handling
 
 ### glyph_lexer (92/92 tests ✓)
 - Unicode-aware tokenization (unicode-xid 0.2)
@@ -100,8 +127,11 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 ### capsule_core
 - `ed25519-dalek = "2.1"` - Ed25519 signatures
 - `serde = { version = "1", features = ["derive"] }` - Serialization
-- `serde_cbor = "0.11"` - CBOR encoding
+- `ciborium = "0.2"` - CBOR encoding (Root Capsule)
+- `serde_cbor = "0.11"` - CBOR encoding (Work Order 4)
+- `serde_bytes = "0.11"` - Efficient byte serialization
 - `sha2 = "0.10"` - SHA-256 hashing
+- `hex = "0.4"` - Hexadecimal encoding
 - `rand = "0.8"` - Random number generation
 
 ### glyph_lexer
@@ -133,5 +163,8 @@ cargo test --workspace -- --test-threads=1
 - **Canonical serialization**: CBOR-based deterministic serialization for AST persistence
 
 ### capsule_core
-- **Deterministic behavior**: All cryptographic operations are deterministic for reproducibility
+- **Deterministic behavior**: All cryptographic operations and content hashing are deterministic for reproducibility
 - **Error handling**: Comprehensive error types for verification failures
+- **Dual CBOR libraries**: Uses `ciborium` for Root Capsule (RFC 8949) and `serde_cbor` for Work Order 4 types
+- **Hash prefixes**: Type-specific prefixes prevent hash collisions across domain types (GlyphV1:, ExprV1:, NodeV1:)
+- **Backward compatibility**: Legacy `compute_content_hash()` preserved for existing Root Capsule code
