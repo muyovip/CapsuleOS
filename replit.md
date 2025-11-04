@@ -1,14 +1,60 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of four foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of five foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
 3. **glyph_parser** - Recursive descent parser and AST for GΛLYPH
 4. **genesis_graph** - Content-addressable DAG for cryptographic lineage and dependencies
+5. **glyph_engine** - Pattern matching engine for GΛLYPH expressions
 
 ## Recent Changes
+
+### 2025-11-04: Pattern Matching Engine (Work Order 6) ✓
+Created complete glyph_engine crate with pattern matching functionality for GΛLYPH expressions:
+
+**Core Features:**
+- Complete pattern matching engine with structural and bind support
+- Pattern types: Wildcard, Variable, Literal, Bind (x@P), Tuple, List, Record, Constructor, Lambda, Apply
+- Variable consistency checking prevents invalid bindings (pattern variable shadowing)
+- Constructor pattern unwinding handles both Apply and LinearApply nodes
+- Deterministic binding serialization using BTreeMap
+- Helper functions: match_any_pattern, match_pattern_many, matches, pattern_variables
+
+**Data Types:**
+- `Expression`: Literal, Var, Lambda, Apply, LinearApply, Let, Match, Tuple, List, Record
+- `Literal`: Int, Float, String, Bool, Unit
+- `Pattern`: 10 pattern types with full structural matching
+- `Bindings`: BTreeMap<String, Expression> for deterministic ordering
+- `MatchResult`: Vec<Bindings> supporting multiple match results
+
+**Pattern Matching Semantics:**
+- Wildcard pattern: matches anything, binds nothing
+- Variable pattern: matches anything, binds to name with consistency checking
+- Literal pattern: exact value matching for all literal types
+- Bind pattern (x@P): binds value to name AND matches nested pattern
+- Structural patterns: recursive matching for Tuple, List, Record
+- Constructor patterns: zero-arg and multi-arg with curried application unwinding
+- Lambda/Application patterns: matches expression structure
+
+**Key Implementation Details:**
+- Variable shadowing prevention: rejects patterns binding same variable to different values
+- Constructor unwinding: handles nested Apply and LinearApply chains
+- Partial record matching: pattern matches subset of record fields
+- Deterministic serialization: BTreeMap ensures stable CBOR output
+- Helper functions for OR semantics, bulk matching, and variable extraction
+
+**Test Coverage (42 tests):**
+- All pattern types (wildcard, variable, literal, bind, structural, constructor)
+- LinearApply constructor patterns (single-arg, multi-arg, mixed chains)
+- Variable shadowing prevention
+- Deterministic binding order and serialization
+- Round-trip property verification
+- Idempotence testing
+- Comprehensive structural matching scenarios
+
+**Test Status**: All 42 glyph_engine tests passing
 
 ### 2025-11-04: GenesisGraph DAG Implementation (Work Order 5) ✓
 Created complete genesis_graph crate with cryptographic DAG functionality:
@@ -106,6 +152,38 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 **Test Status**: All 96 tests passing (92 lexer + 4 capsule_core)
 
 ## Project Architecture
+
+### glyph_engine (42/42 tests ✓)
+**Pattern Matching Engine:**
+- Complete pattern matcher for GΛLYPH expressions with structural and bind support
+- Pattern types: Wildcard, Var, Literal, Bind, Tuple, List, Constructor, Record, Lambda, Apply
+- Variable consistency checking prevents shadowing (same variable bound to different values)
+- Constructor pattern unwinding for both Apply and LinearApply nodes
+- Deterministic binding serialization using BTreeMap
+
+**Core Functions:**
+- `match_pattern()`: Main entry point returning MatchResult (Vec<Bindings>)
+- `match_pattern_internal()`: Recursive matcher with binding accumulation
+- `match_constructor()` / `match_constructor_application()`: Constructor pattern handling
+- `match_any_pattern()`: OR semantics across multiple patterns
+- `match_pattern_many()`: Bulk matching against multiple expressions
+- `matches()`: Boolean check without bindings (faster)
+- `pattern_variables()`: Extract all bound variables from pattern
+- CBOR serialization helpers for MatchResult
+
+**Dependencies:**
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `ciborium = "0.2"` - CBOR encoding
+- `proptest = "1.4"` - Property-based testing (dev dependency)
+
+**Test Coverage:**
+- All 10 pattern types with comprehensive scenarios
+- LinearApply constructor patterns (single-arg, multi-arg, mixed chains)
+- Variable shadowing prevention
+- Deterministic binding order and serialization
+- Round-trip property, idempotence testing
+- Nested patterns, partial record matching
+- Complex structural matching cases
 
 ### genesis_graph (18/18 tests ✓)
 **GenesisGraph DAG:**
@@ -205,15 +283,21 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 - `ciborium = "0.2"` - CBOR serialization
 - `thiserror = "1.0"` - Error handling
 
+### glyph_engine
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `ciborium = "0.2"` - CBOR encoding
+- `proptest = "1.4"` - Property-based testing (dev)
+
 ## Testing
 All tests must run with `--test-threads=1` for deterministic validation:
 ```bash
 cargo test --workspace -- --test-threads=1
 ```
 
-**Current Test Results: 156 tests passing**
+**Current Test Results: 198 tests passing**
 - capsule_core: 10 tests ✓
 - genesis_graph: 18 tests ✓
+- glyph_engine: 42 tests ✓
 - glyph_lexer: 92 tests ✓
 - glyph_parser: 36 tests ✓
 
@@ -245,3 +329,11 @@ cargo test --workspace -- --test-threads=1
 - **Cycle prevention**: DFS-based cycle detection prevents DAG corruption
 - **Canonical serialization**: BTreeMap for nodes and sorted edges ensures deterministic CBOR output
 - **Hash computation**: Uses `GlyphV1:Root:` and `GlyphV1:Node:` prefixes to distinguish node types
+
+### glyph_engine
+- **BTreeMap for Bindings**: Uses BTreeMap instead of HashMap to ensure deterministic serialization order
+- **Variable consistency**: Prevents patterns binding the same variable to different values (shadowing check)
+- **LinearApply support**: Constructor pattern matching handles both Apply and LinearApply nodes
+- **Partial record matching**: Record patterns can match a subset of fields (structural subtyping)
+- **Bind pattern semantics**: x@P binds the value to x AND matches the nested pattern P
+- **Constructor unwinding**: Recursively unwraps nested Apply/LinearApply chains for multi-arg constructors
