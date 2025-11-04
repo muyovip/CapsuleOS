@@ -280,6 +280,11 @@ impl Lexer {
                 Ok(Token::Underscore)
             }
             
+            Some('+') => {
+                self.advance();
+                Ok(Token::Ident("+".to_string()))
+            }
+            
             Some('=') => {
                 self.advance();
                 Ok(Token::Equals)
@@ -289,6 +294,16 @@ impl Lexer {
                 self.advance();
                 self.advance();
                 Ok(Token::Arrow)
+            }
+            
+            Some('-') if self.peek(1).map_or(false, |c| c.is_ascii_digit()) => {
+                self.advance();
+                let num_token = self.read_number()?;
+                match num_token {
+                    Token::Int(n) => Ok(Token::Int(-n)),
+                    Token::Float(f) => Ok(Token::Float(format!("-{}", f))),
+                    _ => unreachable!(),
+                }
             }
             
             Some('⊸') => {
@@ -372,8 +387,8 @@ impl Parser {
         self.tokens.get(self.pos).unwrap_or(&Token::Eof)
     }
     
-    fn advance(&mut self) -> &Token {
-        let token = self.current();
+    fn advance(&mut self) -> Token {
+        let token = self.current().clone();
         self.pos += 1;
         token
     }
@@ -403,8 +418,8 @@ impl Parser {
             self.advance();
             
             let name = match self.advance() {
-                Token::Ident(s) => s.clone(),
-                t => return Err(ParseError::Expected("identifier".to_string(), t.clone())),
+                Token::Ident(s) => s,
+                t => return Err(ParseError::Expected("identifier".to_string(), t)),
             };
             
             self.expect(Token::Equals)?;
@@ -421,7 +436,7 @@ impl Parser {
     fn parse_match(&mut self) -> Result<Expression, ParseError> {
         if matches!(self.current(), Token::Match) {
             self.advance();
-            let expr = Box::new(self.parse_lambda()?);
+            let expr = Box::new(self.parse_primary()?);
             self.expect(Token::LBrace)?;
             
             let mut arms = Vec::new();
@@ -461,8 +476,8 @@ impl Parser {
                 self.advance();
                 Ok(Pattern::Wildcard)
             }
-            Token::Ident(s) => {
-                let name = s.clone();
+            Token::Ident(name) => {
+                let name = name.clone();
                 self.advance();
                 
                 if matches!(self.current(), Token::LParen) {
@@ -511,20 +526,24 @@ impl Parser {
     }
     
     fn parse_lambda(&mut self) -> Result<Expression, ParseError> {
-        if matches!(self.current(), Token::Lambda) {
-            self.advance();
-            
-            let param = match self.advance() {
-                Token::Ident(s) => s.clone(),
-                t => return Err(ParseError::Expected("identifier".to_string(), t.clone())),
-            };
-            
-            self.expect(Token::Arrow)?;
-            let body = Box::new(self.parse_lambda()?);
-            
-            Ok(Expression::Lambda { param, body })
-        } else {
-            self.parse_application()
+        match self.current() {
+            Token::Lambda => {
+                self.advance();
+                
+                let param = match self.advance() {
+                    Token::Ident(s) => s,
+                    t => return Err(ParseError::Expected("identifier".to_string(), t)),
+                };
+                
+                self.expect(Token::Arrow)?;
+                let body = Box::new(self.parse_expression()?);
+                
+                Ok(Expression::Lambda { param, body })
+            }
+            Token::Let | Token::Match => {
+                self.parse_expression()
+            }
+            _ => self.parse_application()
         }
     }
     
@@ -624,8 +643,8 @@ impl Parser {
                 
                 while !matches!(self.current(), Token::RBrace | Token::Eof) {
                     let key = match self.advance() {
-                        Token::Ident(s) => s.clone(),
-                        t => return Err(ParseError::Expected("identifier".to_string(), t.clone())),
+                        Token::Ident(s) => s,
+                        t => return Err(ParseError::Expected("identifier".to_string(), t)),
                     };
                     
                     self.expect(Token::Colon)?;
@@ -883,7 +902,7 @@ mod tests {
     #[test]
     fn test_linear_arrow_precedence() {
         let ast1 = parse("f ⊸ g ⊸ x").unwrap();
-        let ast2 = parse("f ⊸ (g ⊸ x)").unwrap();
+        let _ast2 = parse("f ⊸ (g ⊸ x)").unwrap();
         
         assert!(matches!(ast1, Expression::LinearApply { .. }));
     }
@@ -920,6 +939,21 @@ mod tests {
             assert!(parse(case).is_ok(), "Failed: {}", case);
             assert!(round_trip(case).is_ok(), "Round-trip failed: {}", case);
         }
+    }
+
+    #[test]
+    fn test_record_as_function_argument() {
+        let ast = parse("f { x: 1 }").unwrap();
+        match ast {
+            Expression::Apply { func, arg } => {
+                assert!(matches!(*func, Expression::Var(_)));
+                assert!(matches!(*arg, Expression::Record(_)));
+            }
+            _ => panic!("Expected Apply expression, got {:?}", ast),
+        }
+        
+        assert!(parse("map { transform: λx -> x } data").is_ok());
+        assert!(round_trip("f { x: 1, y: 2 }").is_ok());
     }
 
     #[test]
