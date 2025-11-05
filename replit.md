@@ -1,7 +1,7 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of seven foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of eight foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
@@ -10,8 +10,99 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 5. **glyph_engine** - Pattern matching and substitution engines for GΛLYPH expressions
 6. **rewrite_tx** - Transactional rewrite system for GenesisGraph with rollback capabilities
 7. **capsule_manifest** - Manifest parser, verifier, and loader with Ed25519 signatures and lineage verification
+8. **genesis_engine** - Genesis Graph Engine (GGE) Runtime with parallel pattern matching and deterministic evaluation
 
 ## Recent Changes
+
+### 2025-11-05: Genesis Graph Engine Runtime (Work Order 10) ✓
+Created complete genesis_engine crate with parallel pattern matching runtime for evaluating rewrite rules:
+
+**Core Components:**
+- `GenesisEngine` - Thread-safe runtime with parallel pattern matching
+- `GenesisGraph` - DAG with nodes, edges, and root hash
+- `Rule` / `RuleSet` - Rewrite rules with priority-based ordering
+- `EvaluationState` - Iteration tracking, rules fired, idle state detection
+- `TransactionLog` - Complete audit trail of rule applications
+- `RuntimeConfig` - Configurable evaluation parameters
+
+**Evaluation Loop:**
+- Continuous iteration until idle state (ΔG == 0)
+- Deterministic node ordering (lexicographic by ID)
+- Hash-based change detection for termination
+- Max iterations and timeout protection
+- Priority-based rule application (highest first)
+- Skip updates when data unchanged (optimization)
+
+**Runtime Features:**
+- Thread-safe graph access via Arc<RwLock<GenesisGraph>>
+- Parallel pattern matching with Rayon (configurable)
+- Sequential fallback for deterministic debugging
+- Transaction logging for audit trails
+- Evaluate-until-predicate support
+- Configurable max iterations and timeout
+
+**Pattern Matching:**
+- Parallel matching with automatic priority sorting
+- Sequential matching preserves input order
+- Patterns: Wildcard, Var, Literal, Tuple, List
+- First-match semantics (highest priority wins)
+- Condition evaluation support
+
+**Graph Operations:**
+- Content-addressable node hashing with CBOR
+- Deterministic graph hashing (sorted node iteration)
+- Canonical root node validation (empty root_ref)
+- In-place node updates with timestamp tracking
+- Node insertion/update/retrieval
+
+**Key Implementation Details:**
+- Idle detection: ΔG == 0 when graph hash unchanged
+- Data change optimization: skip updates if new_data == old_data
+- Priority sorting after parallel matching (Rayon doesn't preserve order)
+- Fixed timestamps for deterministic testing
+- Root node uses Literal::Unit to avoid test interference
+
+**Test Coverage (23 tests):**
+- Engine creation and initialization
+- Idle state detection (ΔG == 0)
+- Simple and iterative evaluation
+- Deterministic ordering across runs
+- Transaction log tracking
+- Max iterations limit
+- Rule priority ordering
+- Parallel vs sequential matching
+- Thread-safe concurrent reads
+- Single-writer lock enforcement
+- Predicate-based evaluation
+- Disabled rules handling
+- Multiple rules per iteration
+- Graph convergence
+- Tuple/List pattern matching
+- Comprehensive runtime loop testing
+- Continuous evaluation
+- Idle state property verification
+- Reset transaction log
+- Rule metadata handling
+
+**Test Status**: All 23 genesis_engine tests passing
+
+**Dependencies:**
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `ciborium = "0.2"` - CBOR encoding
+- `sha2 = "0.10"` - SHA-256 hashing
+- `hex = "0.4"` - Hexadecimal encoding
+- `thiserror = "1.0"` - Error handling
+- `parking_lot = "0.12"` - Efficient RwLock
+- `rayon = "1.8"` - Parallel iteration
+- `proptest = "1.4"` - Property testing (dev only)
+
+**Design Decisions:**
+- Thread-safe design with Arc<RwLock> for concurrent access
+- Parallel matching for performance (with deterministic sorting)
+- Skip no-op updates to prevent infinite loops
+- Fixed timestamps (0 for root, 1000 for test nodes) for determinism
+- Deterministic graph hashing via sorted node iteration
+- Root node uses Unit literal to avoid test pattern collisions
 
 ### 2025-11-05: CapsuleManifest System (Work Order 9) ✓
 Created complete capsule_manifest crate with cryptographic manifest verification and registry system:

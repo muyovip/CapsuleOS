@@ -16,9 +16,9 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard};
 use rayon::prelude::*;
 use thiserror::Error;
 use std::time::{Duration, Instant};
@@ -140,9 +140,11 @@ pub struct GenesisGraph {
 
 impl GenesisGraph {
     pub fn new(root_node: GraphNode) -> Result<Self, RuntimeError> {
-        let root_hash = compute_node_hash(&root_node);
+        let mut canonical_node = root_node.clone();
+        canonical_node.root_ref = String::new();
+        let root_hash = compute_node_hash(&canonical_node);
 
-        if root_node.root_ref != root_hash {
+        if !root_node.root_ref.is_empty() && root_node.root_ref != root_hash {
             return Err(RuntimeError::InvalidRootNode);
         }
 
@@ -574,10 +576,18 @@ impl GenesisEngine {
 
     /// Find matching rules using parallel pattern matching
     fn find_matching_rules_parallel<'a>(&self, node: &GraphNode, rules: &[&'a Rule]) -> Vec<&'a Rule> {
-        rules.par_iter()
+        let mut matching: Vec<&'a Rule> = rules.par_iter()
             .filter(|rule| self.rule_matches_node(node, rule))
             .copied()
-            .collect()
+            .collect();
+        
+        matching.sort_by(|a, b| {
+            match b.priority.cmp(&a.priority) {
+                std::cmp::Ordering::Equal => a.id.cmp(&b.id),
+                other => other,
+            }
+        });
+        matching
     }
 
     /// Find matching rules sequentially
@@ -623,6 +633,11 @@ impl GenesisEngine {
 
         // Apply substitutions to replacement
         let new_data = apply_bindings(&rule.replacement, &bindings[0]);
+
+        // Skip update if data hasn't changed (ΔG = 0)
+        if new_data == node.data {
+            return Ok(false);
+        }
 
         // Create updated node
         let new_node = GraphNode {
@@ -723,12 +738,18 @@ impl GenesisEngine {
 // ============================================================================
 
 fn compute_graph_hash(graph: &GenesisGraph) -> Hash {
-    let mut buffer = Vec::new();
-    ciborium::into_writer(graph, &mut buffer).expect("Graph serialization failed");
-
     let mut hasher = Sha256::new();
     hasher.update(b"GlyphV1:Graph:");
-    hasher.update(&buffer);
+    
+    let sorted_nodes = graph.nodes_sorted_by_id();
+    for (hash, node) in sorted_nodes {
+        hasher.update(hash.as_bytes());
+        let mut buffer = Vec::new();
+        ciborium::into_writer(node, &mut buffer).expect("Node serialization failed");
+        hasher.update(&buffer);
+    }
+    
+    hasher.update(graph.root_hash().as_bytes());
 
     hex::encode(hasher.finalize())
 }
@@ -796,7 +817,7 @@ fn match_pattern_internal(
                 false
             }
         }
-        _ => true, // Simplified
+        _ => false, // Other patterns not implemented
     }
 }
 
@@ -854,24 +875,18 @@ mod tests {
 
     fn create_test_root() -> GraphNode {
         let metadata = NodeMetadata {
-            timestamp: current_timestamp(),
+            timestamp: 0,
             lineage_depth: 0,
             tags: vec!["genesis".to_string()],
         };
 
-        let data = Expression::Literal(Literal::Int(0));
+        let data = Expression::Literal(Literal::Unit);
 
-        let node = GraphNode {
+        GraphNode {
             id: "⊙₀".to_string(),
             root_ref: String::new(),
             data,
             metadata,
-        };
-
-        let hash = compute_node_hash(&node);
-        GraphNode {
-            root_ref: hash,
-            ..node
         }
     }
 
@@ -986,14 +1001,15 @@ mod tests {
         let root = create_test_root();
         let mut graph = GenesisGraph::new(root).unwrap();
 
-        // Add nodes in non-deterministic order
+        // Add nodes in non-deterministic order with fixed timestamp
+        let fixed_timestamp = 1000;
         for i in [3, 1, 2] {
             let node = GraphNode {
                 id: format!("node_{}", i),
                 root_ref: graph.root_hash().clone(),
                 data: int(i),
                 metadata: NodeMetadata {
-                    timestamp: current_timestamp(),
+                    timestamp: fixed_timestamp,
                     lineage_depth: 1,
                     tags: vec![],
                 },
@@ -1023,11 +1039,10 @@ mod tests {
         for i in [3, 1, 2] {
             let node = GraphNode {
                 id: format!("node_{}", i),
-                root_ref:
-graph2.root_hash().clone(),
+                root_ref: graph2.root_hash().clone(),
                 data: int(i),
                 metadata: NodeMetadata {
-                    timestamp: current_timestamp(),
+                    timestamp: fixed_timestamp,
                     lineage_depth: 1,
                     tags: vec![],
                 },
@@ -1099,15 +1114,22 @@ graph2.root_hash().clone(),
 
         let engine = GenesisEngine::with_config(graph, config);
 
-        // Create a rule that always matches (infinite loop)
+        // Create alternating rules that cause infinite loop
         let rule = Rule::new(
             "always_match".to_string(),
             10,
-            Pattern::Var("x".to_string()),
-            int(0), // Always resets to 0, causing infinite loop
+            Pattern::Literal(Literal::Int(0)),
+            int(1), // Transforms 0 to 1
+        );
+        
+        let rule2 = Rule::new(
+            "always_match2".to_string(),
+            10,
+            Pattern::Literal(Literal::Int(1)),
+            int(0), // Transforms 1 back to 0
         );
 
-        let result = engine.evaluate(&[rule]);
+        let result = engine.evaluate(&[rule, rule2]);
 
         assert!(matches!(result, Err(RuntimeError::MaxIterationsReached(_))));
     }
@@ -1639,19 +1661,24 @@ graph2.root_hash().clone(),
         assert!(state.rules_fired > 0, "Should have applied some rules");
 
         // Verify transaction log
-        let log = engine.transaction_log();
-        println!("✓ Transaction log: {} applications", log.total_applications());
-        assert!(log.total_applications() > 0);
-        assert!(!log.states().is_empty());
+        {
+            let log = engine.transaction_log();
+            println!("✓ Transaction log: {} applications", log.total_applications());
+            assert!(log.total_applications() > 0);
+            assert!(!log.states().is_empty());
+        }
 
         // Verify deterministic ordering
-        let sorted_nodes = {
+        let sorted_nodes: Vec<(Hash, NodeId)> = {
             let g = engine.graph();
             g.nodes_sorted_by_id()
+                .into_iter()
+                .map(|(h, n)| (h.clone(), n.id.clone()))
+                .collect()
         };
 
         for i in 1..sorted_nodes.len() {
-            assert!(sorted_nodes[i - 1].1.id <= sorted_nodes[i].1.id);
+            assert!(sorted_nodes[i - 1].1 <= sorted_nodes[i].1);
         }
         println!("✓ Node ordering is deterministic");
 
