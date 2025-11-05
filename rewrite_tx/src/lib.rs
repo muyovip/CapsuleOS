@@ -5,80 +5,11 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use thiserror::Error;
 
+pub use glyph_engine::pattern::{Expression, Literal, MatchArm, Pattern, match_pattern as engine_match_pattern, Bindings};
+pub use glyph_engine::substitute::substitute_many;
+
 pub type Hash = String;
 pub type NodeId = String;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Expression {
-    Literal(Literal),
-    Var(String),
-    Lambda {
-        param: String,
-        body: Box<Expression>,
-    },
-    Apply {
-        func: Box<Expression>,
-        arg: Box<Expression>,
-    },
-    LinearApply {
-        func: Box<Expression>,
-        arg: Box<Expression>,
-    },
-    Let {
-        name: String,
-        value: Box<Expression>,
-        body: Box<Expression>,
-    },
-    Match {
-        expr: Box<Expression>,
-        arms: Vec<MatchArm>,
-    },
-    Tuple(Vec<Expression>),
-    List(Vec<Expression>),
-    Record(Vec<(String, Expression)>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Literal {
-    Int(i64),
-    Float(String),
-    String(String),
-    Bool(bool),
-    Unit,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct MatchArm {
-    pub pattern: Pattern,
-    pub guard: Option<Box<Expression>>,
-    pub body: Box<Expression>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Pattern {
-    Wildcard,
-    Var(String),
-    Literal(Literal),
-    Bind {
-        name: String,
-        pattern: Box<Pattern>,
-    },
-    Tuple(Vec<Pattern>),
-    List(Vec<Pattern>),
-    Constructor {
-        name: String,
-        args: Vec<Pattern>,
-    },
-    Record(Vec<(String, Pattern)>),
-    Lambda {
-        param_pattern: Box<Pattern>,
-        body_pattern: Box<Pattern>,
-    },
-    Apply {
-        func_pattern: Box<Pattern>,
-        arg_pattern: Box<Pattern>,
-    },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GraphNode {
@@ -589,57 +520,21 @@ fn compute_node_hash(node: &GraphNode) -> Hash {
     hex::encode(hasher.finalize())
 }
 
-fn match_pattern(expr: &Expression, pattern: &Pattern) -> Vec<HashMap<String, Expression>> {
-    let mut bindings = HashMap::new();
-    if match_pattern_internal(expr, pattern, &mut bindings) {
-        vec![bindings]
-    } else {
-        vec![]
-    }
+fn match_pattern(expr: &Expression, pattern: &Pattern) -> Vec<Bindings> {
+    engine_match_pattern(expr, pattern)
 }
 
-fn match_pattern_internal(
-    expr: &Expression,
-    pattern: &Pattern,
-    bindings: &mut HashMap<String, Expression>,
-) -> bool {
-    match pattern {
-        Pattern::Wildcard => true,
-        Pattern::Var(name) => {
-            if let Some(existing) = bindings.get(name) {
-                existing == expr
-            } else {
-                bindings.insert(name.clone(), expr.clone());
-                true
-            }
-        }
-        Pattern::Literal(pat_lit) => {
-            matches!(expr, Expression::Literal(expr_lit) if expr_lit == pat_lit)
-        }
-        _ => true,
-    }
+fn apply_bindings(expr: &Expression, bindings: &Bindings) -> Expression {
+    let substitutions: HashMap<String, Expression> = bindings
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    substitute_many(expr, &substitutions)
 }
 
-fn apply_bindings(expr: &Expression, bindings: &HashMap<String, Expression>) -> Expression {
-    match expr {
-        Expression::Var(name) => {
-            bindings.get(name).cloned().unwrap_or_else(|| expr.clone())
-        }
-        Expression::Literal(_) => expr.clone(),
-        Expression::Apply { func, arg } => Expression::Apply {
-            func: Box::new(apply_bindings(func, bindings)),
-            arg: Box::new(apply_bindings(arg, bindings)),
-        },
-        Expression::Lambda { param, body } => Expression::Lambda {
-            param: param.clone(),
-            body: Box::new(apply_bindings(body, bindings)),
-        },
-        _ => expr.clone(),
-    }
-}
-
-fn evaluate_condition(_condition: &Expression, _bindings: &HashMap<String, Expression>) -> bool {
-    true
+fn evaluate_condition(condition: &Expression, bindings: &Bindings) -> bool {
+    let evaluated = apply_bindings(condition, bindings);
+    matches!(evaluated, Expression::Literal(Literal::Bool(true)))
 }
 
 #[cfg(test)]

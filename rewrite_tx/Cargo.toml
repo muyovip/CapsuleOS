@@ -10,6 +10,7 @@ sha2 = "0.10"
 hex = "0.4"
 thiserror = "1.0"
 parking_lot = "0.12"
+glyph_engine = { path = "../glyph_engine" }
 
 [dev-dependencies]
 proptest = "1.4"
