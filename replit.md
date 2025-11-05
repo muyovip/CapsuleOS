@@ -11,6 +11,58 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 
 ## Recent Changes
 
+### 2025-11-05: Capture-Avoiding Substitution Engine (Work Order 7) ✓
+Created complete capture-avoiding substitution engine in glyph_engine crate:
+
+**Core Features:**
+- Fresh name generation (gensym) with atomic counter for deterministic testing
+- Free variables analysis with scope tracking
+- Alpha renaming (α-conversion) to avoid variable capture
+- Capture-avoiding substitution for all expression types
+- Pattern variable extraction
+- Multiple simultaneous substitutions
+- Well-formedness checking (no unbound variables)
+
+**Substitution Functions:**
+- `substitute()`: Main entry point for capture-avoiding substitution expr[var := replacement]
+- `substitute_internal()`: Recursive substitution with bound variable tracking
+- `substitute_match_arm()`: Special handling for match arms with pattern capture avoidance
+- `substitute_many()`: Parallel substitution of multiple variables (deterministic ordering)
+- `substitute_pattern()`: Rename variables in patterns
+
+**Helper Functions:**
+- `gensym()`: Generate unique fresh variable names with format "prefix$N"
+- `reset_gensym()`: Reset counter for deterministic testing
+- `free_vars()`: Compute set of free variables in expression
+- `pattern_variables()`: Extract all variables bound by a pattern
+- `alpha_rename()`: Rename bound variable to avoid capture (returns new name + renamed expr)
+- `alpha_rename_pattern()`: Rename pattern variables
+- `is_well_formed()`: Check for unbound variables (closed terms only)
+
+**Key Implementation Details:**
+- Variable shadowing: bound variables block substitution in their scope
+- Capture avoidance: automatic α-renaming when replacement would be captured
+- Lambda handling: renames parameter if it appears in replacement's free vars
+- Let binding handling: same capture avoidance as lambda
+- Match expression handling: pattern variables shadow in guard and body
+- Deterministic substitution: uses avoid sets to ensure consistent fresh names
+
+**Test Coverage (47 tests):**
+- Gensym uniqueness and freshness
+- Free variables computation (simple, lambda, mixed scopes)
+- Variable substitution (var, apply, tuple, list, record)
+- Lambda substitution (free vars, shadowing, capture avoidance)
+- Let binding substitution (value, body, shadowing, capture)
+- Match expression substitution (expr, pattern shadowing, capture avoidance, guards)
+- Alpha renaming (simple, conflict avoidance)
+- Pattern variable extraction (simple, tuple, bind, constructor, record)
+- Well-formedness checking (closed/open terms, preservation)
+- Multiple substitutions (deterministic ordering)
+- Property tests (determinism, idempotence, commutativity, α-equivalence preservation)
+- Comprehensive integration tests (Church numerals, nested structures, complex scenarios)
+
+**Test Status**: All 47 substitute tests passing (89 total glyph_engine tests)
+
 ### 2025-11-04: Pattern Matching Engine (Work Order 6) ✓
 Created complete glyph_engine crate with pattern matching functionality for GΛLYPH expressions:
 
@@ -153,7 +205,26 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 
 ## Project Architecture
 
-### glyph_engine (42/42 tests ✓)
+### glyph_engine (89/89 tests ✓)
+
+**Capture-Avoiding Substitution Engine (47 tests):**
+- Complete capture-avoiding substitution with α-conversion
+- Fresh name generation via atomic gensym counter
+- Free variables analysis with scope tracking
+- Alpha renaming for bound variables to avoid capture
+- Pattern variable extraction from all pattern types
+- Multiple simultaneous substitutions with deterministic ordering
+- Well-formedness checking for closed terms
+
+**Substitution Algorithm:**
+- Main entry: `substitute(expr, var, replacement)` returns expr[var := replacement]
+- Handles all expression types: Literal, Var, Lambda, Apply, LinearApply, Let, Match, Tuple, List, Record
+- Automatic α-renaming when replacement would capture bound variables
+- Special handling for match arms with pattern-bound variables
+- Preserves well-formedness of closed terms
+- Deterministic behavior for testing (gensym reset capability)
+
+**glyph_engine (42 tests ✓)
 **Pattern Matching Engine:**
 - Complete pattern matcher for GΛLYPH expressions with structural and bind support
 - Pattern types: Wildcard, Var, Literal, Bind, Tuple, List, Constructor, Record, Lambda, Apply
@@ -294,10 +365,10 @@ All tests must run with `--test-threads=1` for deterministic validation:
 cargo test --workspace -- --test-threads=1
 ```
 
-**Current Test Results: 198 tests passing**
+**Current Test Results: 245 tests passing**
 - capsule_core: 10 tests ✓
 - genesis_graph: 18 tests ✓
-- glyph_engine: 42 tests ✓
+- glyph_engine: 89 tests ✓ (42 pattern matching + 47 substitution)
 - glyph_lexer: 92 tests ✓
 - glyph_parser: 36 tests ✓
 
@@ -337,3 +408,7 @@ cargo test --workspace -- --test-threads=1
 - **Partial record matching**: Record patterns can match a subset of fields (structural subtyping)
 - **Bind pattern semantics**: x@P binds the value to x AND matches the nested pattern P
 - **Constructor unwinding**: Recursively unwraps nested Apply/LinearApply chains for multi-arg constructors
+- **Atomic gensym**: Uses AtomicUsize for thread-safe fresh name generation with deterministic testing
+- **Capture avoidance**: Automatic α-renaming prevents variable capture during substitution
+- **Scope tracking**: Maintains bound variable sets to handle shadowing correctly
+- **Match arm handling**: Special logic for pattern-bound variables in match expressions
