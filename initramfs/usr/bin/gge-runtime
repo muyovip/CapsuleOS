@@ -1,7 +1,17 @@
 #!/bin/sh
-# gge-runtime - Genesis Graph Engine Runtime (Mock/Stub)
-# This is a placeholder for the actual GGE implementation
-# In production, this would be the compiled genesis_engine binary
+# gge-runtime - Genesis Graph Engine Runtime Stub
+#
+# ARCHITECTURAL SPECIFICATION - NOT PRODUCTION CODE
+#
+# In production, this file would be REPLACED by the compiled genesis_engine binary.
+# The actual implementation is in: workspace/genesis_engine/
+#
+# Integration: 
+#   1. Compile genesis_engine: cd genesis_engine && cargo build --release
+#   2. Copy binary: cp target/release/genesis_engine initramfs/usr/bin/gge-runtime
+#   3. Build initramfs: find initramfs | cpio -o -H newc | gzip > boot/initramfs.img
+#
+# This stub demonstrates the BOOT HANDOFF interface between /init and GGE.
 
 set -e
 

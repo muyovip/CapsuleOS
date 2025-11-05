@@ -1,0 +1,24 @@
+[package]
+name = "capsuleos-kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Note: This is a conceptual kernel implementation
+# Real bare-metal kernels would use:
+# - no_std environment
+# - custom panic handler
+# - bootloader-specific entry points
+
+# Conceptual dependencies for demonstration
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[profile.release]
+# Kernel build optimizations
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[features]
+default = []

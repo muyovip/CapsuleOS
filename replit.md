@@ -1,8 +1,9 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of nine foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of nine foundational components plus bare-metal boot infrastructure:
 
+**Core Components:**
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
 3. **glyph_parser** - Recursive descent parser and AST for GΛLYPH
@@ -13,7 +14,160 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 8. **genesis_engine** - Genesis Graph Engine (GGE) Runtime with parallel pattern matching and deterministic evaluation
 9. **cyberus_cli** - Command-line interface for CapsuleOS node control and Γ registry operations
 
+**Boot Infrastructure:**
+10. **boot/** - GRUB configuration and bootloader setup
+11. **initramfs/** - Early boot environment with CAS mounting and capsule verification
+12. **kernel/** - Bare-metal kernel with hardware initialization and cryptographic verification
+
 ## Recent Changes
+
+### 2025-11-05: Hypervisor Protocol Layer 0 (Work Order 12) ✓
+Created complete bare-metal boot infrastructure establishing the foundational boot layer:
+
+**Boot Sequence:**
+```
+GRUB → Kernel → Initramfs → /init → CAS Mount → ⊙₀ Verification → GGE Runtime
+```
+
+**Core Components:**
+- `boot/grub/grub.cfg` - GRUB multiboot configuration for CapsuleOS kernel
+- `initramfs/init` - Main boot sequence script (PID 1 in initial ramdisk)
+- `initramfs/etc/genesis.cfg` - Storage and runtime configuration
+- `kernel/src/main.rs` - Bare-metal kernel entry point (kmain)
+- `kernel/src/capsule/loader.rs` - Cryptographic capsule verification and loading
+- Boot utilities: `cas-mount`, `capsule-loader`, `hash-utility`, `gge-runtime`
+
+**Boot Phases:**
+
+**Phase 1: GRUB Bootloader**
+- Loads kernel binary (multiboot format)
+- Loads initramfs image into RAM
+- Passes control to kernel entry point
+- Command-line parameters: `log_level=debug deterministic_boot=true`
+
+**Phase 2: Kernel Initialization**
+- Serial port initialization for boot logging
+- MMU and paging setup (virtual memory)
+- Interrupt handling (IDT, exceptions)
+- VFS initialization with initramfs as root
+- Execute `/init` script (kernel→userspace transition)
+
+**Phase 3: Initramfs Boot Sequence**
+- Hardware initialization verification
+- Early mount of Content-Addressed Storage (IPFS/CAS)
+- Root Capsule (⊙₀) loading:
+  - Locate capsule by CID in CAS
+  - Verify Ed25519 signature (Chain of Trust)
+  - Load into memory at 0x40000000
+  - Compute SHA-256 hash for boot audit
+  - Log hash to kernel message buffer
+- Spawn GGE runtime as primordial process (PID 1)
+
+**Phase 4: GGE Runtime**
+- Register ⊙₀ as initial graph state
+- Load rewrite rules from capsule manifest
+- Begin parallel pattern matching evaluation
+- Establish CapsuleOS runtime environment
+
+**Cryptographic Chain of Trust:**
+1. GRUB (secure boot) → Kernel (verified by GRUB)
+2. Kernel → Initramfs (loaded by kernel)
+3. Initramfs → Root Capsule ⊙₀ (Ed25519 verified)
+4. ⊙₀ → GGE Runtime (loaded from verified capsule)
+
+**Kernel Architecture:**
+- Bare-metal kernel (no_std environment)
+- Hardware initialization (CPU, MMU, interrupts)
+- Virtual filesystem (initramfs/cpio support)
+- Memory management (paging, virtual memory)
+- Capsule loader with cryptographic verification
+- Serial console for deterministic boot logging
+
+**Boot Utilities:**
+- `cas-mount` - Mounts Content-Addressed Storage (IPFS/CAS block device)
+- `capsule-loader` - Verifies Ed25519 signatures and loads capsules into memory
+- `hash-utility` - Computes SHA-256 hashes for deterministic boot audit
+- `gge-runtime` - Genesis Graph Engine executable (primordial process)
+
+**Configuration (`initramfs/etc/genesis.cfg`):**
+```ini
+[storage]
+type = ipfs_local
+endpoint = /mnt/cas
+root_cid = QmRootCapsuleHash...
+root_public_key = ed25519:...
+
+[modules]
+gge_path = /usr/bin/gge-runtime
+gge_flags = --deterministic --log-mutations --audit-mode
+
+[boot]
+deterministic = true
+log_device = /dev/kmsg
+mount_timeout_ms = 5000
+verification_mode = strict
+```
+
+**Expected Boot Log:**
+```
+CapsuleOS Kernel: kmain started.
+INFO: MMU/Paging initialized.
+INFO: Initial VFS mounted (initramfs).
+--- CapsuleOS Hypervisor Protocol Layer 0 (Bare-Metal Boot) ---
+INFO: Low-level hardware initialization complete (CPU, memory, MMU).
+STEP: Attempting early mount of Content-Addressed Storage...
+SUCCESS: CAS mounted at /mnt/cas.
+STEP: Loading Root Capsule (⊙₀) from /mnt/cas/cid/QmRootCapsule...
+INFO: Root Capsule signature verified.
+LOG: ⊙₀ Loaded. Hash: 0xAFFECAFEBEEFDEAD...
+STEP: Spawning Genesis Graph Engine (GGE) runtime...
+GGE: Genesis Graph Engine starting up...
+```
+
+**Security Features:**
+- Root public key embedded in kernel at compile time
+- Ed25519 signature verification for all capsules
+- Deterministic hash logging for boot audit trail
+- MMU enforces kernel/user memory separation
+- Audit logging to `/dev/kmsg` for all mutations
+
+**Implementation Status:**
+- This is an ARCHITECTURAL SPECIFICATION (not production code)
+- Demonstrates the DESIGN of bare-metal OS boot sequence
+- Stub components show integration interfaces:
+  - `gge-runtime` → Replace with compiled `genesis_engine` binary
+  - `capsule-loader` → Implement using `capsule_core` crypto primitives
+  - `cas-mount` → Integrate with IPFS or CAS block device
+- See `boot/INTEGRATION.md` for complete integration guide
+- Real production implementation would require:
+  - Complete assembly entry point (_start)
+  - Full x86_64 MMU/paging (page table setup)
+  - Real IPFS/CAS integration
+  - Complete interrupt handling (IDT, ISR)
+  - Full VFS implementation (cpio parsing, tmpfs)
+  - Hardware timer for timestamps
+  - UEFI Secure Boot integration
+
+**Testing:**
+```bash
+# Build kernel (conceptual)
+cd kernel && cargo build --release
+
+# Build initramfs
+cd initramfs && find . | cpio -o -H newc | gzip > ../boot/initramfs.img
+
+# Test with QEMU
+qemu-system-x86_64 -kernel boot/capsuleos-kernel -initrd boot/initramfs.img -serial stdio
+```
+
+**Design Decisions:**
+- Multiboot format for GRUB compatibility
+- Initramfs for early boot environment (no hard-coded storage paths)
+- Ed25519 signatures for cryptographic verification
+- Content-addressed storage via IPFS/CAS
+- Deterministic boot sequence with hash logging
+- GGE as PID 1 (primordial process)
+- Sovereignty enforcement from boot layer
 
 ### 2025-11-05: Cyberus CLI (Work Order 11) ✓
 Created complete cyberus_cli crate with command-line interface for CapsuleOS node control:
