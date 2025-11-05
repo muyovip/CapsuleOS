@@ -56,26 +56,25 @@ pub fn detect_deterministic_collisions(bodies: &[RigidBody]) -> Vec<Contact> {
 pub fn solve_constraints(world: &mut World, contacts: &[Contact]) {
     const SOLVER_ITERATIONS: u32 = 4; 
 
-    let mut body_map: std::collections::HashMap<&String, &mut RigidBody> = world.bodies
-        .iter_mut()
-        .map(|b| (&b.id, b))
-        .collect();
-
     for _ in 0..SOLVER_ITERATIONS {
         for contact in contacts {
-            let body_a = body_map.get_mut(&contact.body_id_a).unwrap();
+            let body_a_idx = world.bodies.iter().position(|b| b.id == contact.body_id_a);
             
-            let restitution: f32 = 0.5;
-            
-            let v_rel_n = body_a.linear_velocity.dot(&contact.normal_w);
-            
-            let v_target = -restitution * v_rel_n;
+            if let Some(idx) = body_a_idx {
+                let body_a = &mut world.bodies[idx];
+                
+                let restitution: f32 = 0.5;
+                
+                let v_rel_n = body_a.linear_velocity.dot(&contact.normal_w);
+                
+                let v_target = -restitution * v_rel_n;
 
-            let impulse_magnitude = (v_target - v_rel_n) / body_a.inv_mass;
-            
-            let impulse = contact.normal_w * impulse_magnitude;
+                let impulse_magnitude = (v_target - v_rel_n) / body_a.inv_mass;
+                
+                let impulse = contact.normal_w * impulse_magnitude;
 
-            body_a.linear_velocity += impulse * body_a.inv_mass;
+                body_a.linear_velocity += impulse * body_a.inv_mass;
+            }
         }
     }
 }

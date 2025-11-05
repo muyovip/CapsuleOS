@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 ciborium = { version = "0.2", features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
-nalgebra = "0.32"
+nalgebra = { version = "0.32", features = ["serde-serialize"] }
 sha2 = "0.10"
 anyhow = "1.0"

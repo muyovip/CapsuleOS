@@ -107,8 +107,10 @@ pub fn evolve_world(world: &mut World) -> Result<Vec<GraphNodeTransform>> {
 
 /// Helper function to perform canonical CBOR serialization.
 pub fn canonical_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    ciborium::ser::into_vec(value)
-        .context("Failed to perform canonical CBOR serialization")
+    let mut bytes = Vec::new();
+    ciborium::ser::into_writer(value, &mut bytes)
+        .context("Failed to perform canonical CBOR serialization")?;
+    Ok(bytes)
 }
 
 /// Serializes the entire EventLog to canonical CBOR and returns the hash.
