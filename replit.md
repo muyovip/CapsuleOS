@@ -22,7 +22,148 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 **Rendering Infrastructure:**
 13. **render_core_capsule** - Deterministic rendering engine with content-addressable outputs
 
+**Physics Infrastructure:**
+14. **physix_capsule** - Deterministic rigid-body physics engine with event logging
+
 ## Recent Changes
+
+### 2025-11-05: Physix Capsule (Work Order 14) ✓
+Created complete physix_capsule crate with deterministic rigid-body physics simulation:
+
+**Core Features:**
+- Fixed timestep simulation (1/60 sec) for deterministic evolution
+- Semi-implicit Euler integration for velocity and position
+- Deterministic collision detection with lexicographical ordering
+- Sequential impulse constraint solver (stub implementation)
+- Content-addressable event logging: SHA256("PhysixV1" || CBOR(EventLog))
+- GraphNode transforms for Γ integration
+- CBOR serialization for replay and verification
+
+**Physics Architecture:**
+
+**RigidBody Schema:**
+- `Transform` - Position (Vector3) + Rotation (UnitQuaternion)
+- `Shape` - Box (half extents) or Sphere (radius)
+- `RigidBody` - ID, mass, inertia tensor, velocities, forces
+- Canonical serialization with nalgebra serde support
+
+**Simulation Loop:**
+1. **Integration** - Semi-implicit Euler (velocity → position)
+2. **Collision Detection** - Deterministic pairwise checks (sorted by ID)
+3. **Constraint Solver** - Sequential impulse (fixed iterations)
+4. **State Update** - Increment timestep, emit GraphNode transforms
+
+**Event Logging:**
+- `EventLog` - Initial state hash + all GraphNode transforms
+- Content hash: SHA256("PhysixV1" || CBOR(log))
+- Replay verification by hash comparison
+- Deterministic property: identical inputs → identical event log hash
+
+**GraphNode Integration:**
+```rust
+pub struct GraphNodeTransform {
+    body_id: String,           // Canonical ID (e.g., "BodyA")
+    transform: Transform,      // Position + rotation
+    timestamp: u64,            // Global time index
+    state_hash: String,        // SHA256(CBOR(transform))
+}
+```
+
+**API Usage:**
+```rust
+use physix_capsule::{World, rigid_body::RigidBody, evolve_world};
+use nalgebra::Vector3;
+
+// Create world with bodies
+let mut world = World {
+    bodies: vec![
+        RigidBody::new_box("BodyA", Vector3::new(0.0, 5.0, 0.0), 
+                           1.0, Vector3::new(0.5, 0.5, 0.5)),
+    ],
+    time_step_count: 0,
+};
+
+// Simulation loop
+for _ in 0..120 {
+    let transforms = evolve_world(&mut world)?;
+    event_log.transforms.extend(transforms);
+}
+
+// Serialize and hash
+let (cbor_bytes, hash) = serialize_event_log(&event_log)?;
+```
+
+**Deterministic Guarantees:**
+1. Fixed timestep (1/60 sec) - No variable dt
+2. Canonical body ordering - Lexicographical ID sort for collisions
+3. Fixed iteration counts - Solver runs exactly 4 iterations
+4. Deterministic serialization - CBOR with consistent encoding
+5. Reproducible hashes - Same inputs always produce same event log hash
+
+**Test Results:**
+```
+✓ test_deterministic_simulation - PASSED
+  Hash (run 1): identical
+  Hash (run 2): identical
+  ✓ Multiple runs produce identical event logs
+
+✓ test_graph_node_transform_hash_stability - PASSED
+  ✓ Transform hashing is deterministic
+
+✓ test_event_log_serialization_roundtrip - PASSED
+  ✓ CBOR serialization preserves all data
+  ✓ Hash verification successful
+```
+
+**Example Output (bouncing_box):**
+```
+Starting deterministic simulation for 120 steps...
+Simulation complete. Total steps: 120
+Wrote event log to: event_log.cbor
+Content Hash: 0f86e416addf2f2d251506785e6f2e044ea0c5e12d3befe8eb4a30ac8466d1b0
+```
+
+**Example Output (replay_log):**
+```
+Replay Successful!
+  Log Path: event_log.cbor
+  Total Steps in Log: 120
+  Event Log Content Hash: 0f86e416addf2f2d251506785e6f2e044ea0c5e12d3befe8eb4a30ac8466d1b0
+Replay successful: event_log hash equals original
+```
+
+**Integration with CapsuleOS:**
+- Γ-loadable physics capsule with lineage tracking
+- Event logs as content-addressable audit trail
+- GraphNode transforms for state evolution in Genesis Graph
+- Deterministic replay for verification and debugging
+
+**Future Enhancements:**
+- Full collision detection (SAT, GJK/EPA for convex shapes)
+- Advanced constraint solver (warm starting, friction cones)
+- Rigid body joints (hinges, sliders, fixed)
+- Soft body dynamics with deterministic FEM
+- Parallel island detection for performance
+- GPU-accelerated broad phase
+- Continuous collision detection (CCD)
+- Articulated bodies and ragdolls
+
+**Design Decisions:**
+- Fixed timestep ensures deterministic evolution
+- Lexicographical ID ordering for deterministic collision pairs
+- Semi-implicit Euler balances stability and simplicity
+- CBOR for canonical serialization (deterministic encoding)
+- SHA-256 with "PhysixV1" prefix for content addressing
+- Sequential impulse solver stub (expandable to full PGS)
+- nalgebra for matrix/vector operations with serde support
+
+**Files Created:**
+- `physix_capsule/src/lib.rs` - Core API, World, EventLog, GraphNodeTransform
+- `physix_capsule/src/rigid_body.rs` - RigidBody schema and integrator
+- `physix_capsule/src/solver.rs` - Deterministic collision and constraint solver
+- `physix_capsule/examples/bouncing_box.rs` - Simulation example
+- `physix_capsule/examples/replay_log.rs` - Event log replay verification
+- `physix_capsule/tests/physix_tests.rs` - Property tests for determinism
 
 ### 2025-11-05: RenderCore Capsule (Work Order 13) ✓
 Created complete render_core_capsule crate with deterministic rasterization and content-addressable rendering:
