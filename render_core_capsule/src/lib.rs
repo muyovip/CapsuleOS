@@ -26,7 +26,7 @@ pub struct FrameBuffer {
 
 impl FrameBuffer {
     pub fn canonical_serialize(&self) -> Result<Vec<u8>> {
-        ciborium::ser::into_vec(&self).map_err(|e| anyhow::anyhow!("CBOR serialization error: {}", e))
+        serde_cbor::to_vec(&self).map_err(|e| anyhow::anyhow!("CBOR serialization error: {}", e))
     }
 
     pub fn compute_content_hash(&self) -> Result<String> {
@@ -38,7 +38,7 @@ impl FrameBuffer {
     }
 }
 
-pub fn load_capsule(manifest: CapsuleManifest) -> Result<CapsuleHandle> {
+pub fn load_capsule(_manifest: CapsuleManifest) -> Result<CapsuleHandle> {
     let handle = CapsuleHandle { id: 0xDEADBEEF };
     
     #[cfg(feature = "vulkan")]
@@ -56,7 +56,7 @@ pub fn load_capsule(manifest: CapsuleManifest) -> Result<CapsuleHandle> {
     Ok(handle)
 }
 
-pub fn render_scene(handle: &CapsuleHandle, scene_expr: &Expression) -> Result<FrameBufferExpr> {
+pub fn render_scene(_handle: &CapsuleHandle, scene_expr: &Expression) -> Result<FrameBufferExpr> {
     let output_fb = if cfg!(feature = "cpu_fallback") {
         cpu_renderer::render_cpu_fallback(scene_expr)?
     } else if cfg!(any(feature = "vulkan", feature = "wgpu")) {

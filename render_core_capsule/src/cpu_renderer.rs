@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use nalgebra::{Vector3, Matrix4};
+use nalgebra::Vector3;
 use crate::{scene::Expression, FrameBuffer};
 
 const DEFAULT_WIDTH: u32 = 128;
@@ -51,8 +51,8 @@ pub fn render_cpu_fallback(scene_expr: &Expression) -> Result<FrameBuffer> {
                     v_h.xyz()
                 });
 
-                let (min_x, max_x) = transformed_verts.iter().fold((width as f32, 0.0), |(min_x, max_x), v| (min_x.min(v.x), max_x.max(v.x)));
-                let (min_y, max_y) = transformed_verts.iter().fold((height as f32, 0.0), |(min_y, max_y), v| (min_y.min(v.y), max_y.max(v.y)));
+                let (min_x, max_x) = transformed_verts.iter().fold((width as f32, 0.0_f32), |(min_x, max_x), v| (min_x.min(v.x), max_x.max(v.x)));
+                let (min_y, max_y) = transformed_verts.iter().fold((height as f32, 0.0_f32), |(min_y, max_y), v| (min_y.min(v.y), max_y.max(v.y)));
 
                 let x_start = (min_x.floor() as u32).min(width).max(0);
                 let x_end = (max_x.ceil() as u32).min(width).max(0);

@@ -4,21 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ciborium = { version = "0.2", features = ["std"] }
+serde_cbor = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 sha2 = "0.10"
 anyhow = "1.0"
-nalgebra = "0.32"
+nalgebra = { version = "0.32", features = ["serde-serialize"] }
 
 [features]
 default = ["cpu_fallback"]
 vulkan = []
-wgpu = ["wgpu_core"]
+wgpu = []
 cpu_fallback = []
-
-[target.'cfg(feature = "wgpu")'.dependencies]
-wgpu_core = { version = "0.17", optional = true }
-
-[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-web-sys = { version = "0.3", features = ['console'] }

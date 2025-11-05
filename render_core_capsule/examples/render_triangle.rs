@@ -52,11 +52,11 @@ fn main() -> Result<()> {
     println!("Content Hash: {}", fb_expr.content_hash);
     println!();
 
-    let scene_cbor = ciborium::ser::into_vec(&scene)?;
+    let scene_cbor = serde_cbor::to_vec(&scene)?;
     fs::write("scene.cbor", &scene_cbor)?;
     println!("Scene saved to: scene.cbor ({} bytes)", scene_cbor.len());
 
-    let fb_expr_cbor = ciborium::ser::into_vec(&fb_expr)?;
+    let fb_expr_cbor = serde_cbor::to_vec(&fb_expr)?;
     fs::write("framebuffer.cbor", &fb_expr_cbor)?;
     println!("Framebuffer expression saved to: framebuffer.cbor ({} bytes)", fb_expr_cbor.len());
     println!();

@@ -41,7 +41,7 @@ fn test_cpu_fallback_deterministic_output() -> Result<()> {
 
     let fb_expr = render_scene(&handle, &scene)?;
 
-    let expected_hash = "77370fa934c5688ef77a06a2e46b1be2c40213d2a700fa3247f48a04b50c6b12"; 
+    let expected_hash = "f6ad566ecfdc845050c267a44bb2a528b0e14c8805e87ce2bf3d762032738491"; 
     
     assert_eq!(
         fb_expr.content_hash,
