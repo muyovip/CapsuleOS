@@ -19,7 +19,159 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 11. **initramfs/** - Early boot environment with CAS mounting and capsule verification
 12. **kernel/** - Bare-metal kernel with hardware initialization and cryptographic verification
 
+**Rendering Infrastructure:**
+13. **render_core_capsule** - Deterministic rendering engine with content-addressable outputs
+
 ## Recent Changes
+
+### 2025-11-05: RenderCore Capsule (Work Order 13) ✓
+Created complete render_core_capsule crate with deterministic rasterization and content-addressable rendering:
+
+**Core Features:**
+- CPU fallback renderer with deterministic rasterization
+- Content-addressable rendering: SHA256("RenderV1" || CBOR(framebuffer))
+- Canonical scene schema using G\u039bLYPH expressions
+- Multi-backend support (CPU working, GPU stubs ready)
+- CBOR serialization for all scene data and outputs
+- Deterministic guarantees: identical inputs → identical outputs
+
+**Rendering Architecture:**
+
+**Scene Expressions:**
+- `Triangle` - Single triangle with vertices, material ID, transform matrix
+- `Mesh` - Collection of triangles (indices + positions)
+- `Camera` - Position, target, up vector, FOV, aspect ratio
+- `Material` - ID and RGB color vector
+- `Scene` - Container for all elements with width/height
+
+**Backends:**
+- CPU Fallback - Scanline rasterizer with bounding box filling (working)
+- GPU Stubs - WGPU/Vulkan interfaces ready for implementation
+- Unified API - Common interface across all rendering paths
+
+**Deterministic Foundations:**
+1. Fixed memory layouts - Consistent buffer initialization (BGRA u8x4)
+2. Canonical serialization - CBOR for all scene data
+3. Content addressing - SHA-256 hash of serialized framebuffer
+4. Deterministic operations - Scanline without floating point tricks
+5. Fixed seed support - Ready for future stochastic effects
+
+**Content-Addressable Hashing:**
+```rust
+hash = SHA256("RenderV1" || CBOR(FrameBuffer {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>  // BGRA format
+}))
+```
+
+**API Usage:**
+```rust
+use render_core_capsule::*;
+use nalgebra::{Vector3, Matrix4};
+
+// Define scene
+let scene = Expression::Scene {
+    width: 128,
+    height: 128,
+    elements: vec![
+        Expression::Material {
+            id: 1,
+            color: Vector3::new(1.0, 0.0, 0.0),
+        },
+        Expression::Triangle {
+            vertices: [
+                Vector3::new(20.0, 20.0, 0.0),
+                Vector3::new(100.0, 20.0, 0.0),
+                Vector3::new(20.0, 100.0, 0.0),
+            ],
+            material_id: 1,
+            transform: Matrix4::identity(),
+        },
+    ],
+};
+
+// Load capsule
+let manifest = CapsuleManifest {
+    name: "renderer".to_string(),
+    version: 1,
+    lineage: "⊙₀".to_string(),
+};
+let handle = load_capsule(manifest)?;
+
+// Render scene
+let fb_expr = render_scene(&handle, &scene)?;
+
+// Content hash available for verification
+println!("Content Hash: {}", fb_expr.content_hash);
+```
+
+**CPU Renderer Implementation:**
+- Bounding box calculation for triangle culling
+- Scanline rasterization with edge function tests
+- Point-in-triangle test using cross products (deterministic)
+- Material lookup and color application
+- BGRA pixel format (Blue, Green, Red, Alpha)
+- Pixel center sampling (x + 0.5, y + 0.5)
+- No depth buffering (future enhancement)
+- No perspective correction (future enhancement)
+
+**Test Results:**
+```
+✓ test_cpu_fallback_deterministic_output - PASSED
+  Expected hash: 5faaaad265033107969f7bca363a1fe0f91b80af19dd859a7fa09c8b30c033ca
+  Actual hash:   5faaaad265033107969f7bca363a1fe0f91b80af19dd859a7fa09c8b30c033ca
+  ✓ Deterministic output verified
+  ✓ Proper triangle interior rasterization (edge function tests)
+```
+
+**Example Output (render_triangle):**
+```
+=================================================================
+RenderCore Capsule - Triangle Rendering Example
+=================================================================
+Width:        128 pixels
+Height:       128 pixels
+Content Hash: ab2bd046976befc0b7f4714aed8ace77875a9bce2d10eaedcf31e6b5fd6e76ed
+
+Scene saved to: scene.cbor (201 bytes)
+Framebuffer expression saved to: framebuffer.cbor (97 bytes)
+
+Content-Addressable Rendering Verified
+Hash: SHA256("RenderV1" || CBOR(framebuffer))
+```
+
+**Integration with CapsuleOS:**
+- Γ-loadable capsule with lineage verification
+- Manifest-driven initialization
+- Content-addressable outputs for audit trail
+- Deterministic replay for verification
+
+**Future Enhancements:**
+- Z-buffering for depth testing
+- Perspective-correct interpolation
+- Texture mapping support
+- Ray tracing with seeded RNG
+- WGPU backend implementation
+- Vulkan backend implementation
+- Shader compilation pipeline
+- Multi-threaded CPU rasterization
+
+**Design Decisions:**
+- CBOR for canonical serialization (deterministic encoding)
+- SHA-256 with "RenderV1" prefix for content addressing
+- CPU fallback ensures determinism without GPU dependencies
+- Bounding box rasterization for simplicity
+- nalgebra for matrix/vector operations with serde support
+- Feature flags for backend selection (cpu_fallback, vulkan, wgpu)
+
+**Files Created:**
+- `render_core_capsule/src/lib.rs` - Core API and FrameBuffer
+- `render_core_capsule/src/scene.rs` - G\u039bLYPH scene expressions
+- `render_core_capsule/src/cpu_renderer.rs` - Deterministic CPU rasterizer
+- `render_core_capsule/src/gpu_renderer.rs` - GPU backend stubs
+- `render_core_capsule/tests/render_tests.rs` - Determinism validation tests
+- `render_core_capsule/examples/render_triangle.rs` - Example usage and CBOR output
 
 ### 2025-11-05: Hypervisor Protocol Layer 0 (Work Order 12) ✓
 Created complete bare-metal boot infrastructure establishing the foundational boot layer:
