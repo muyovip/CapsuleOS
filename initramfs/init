@@ -1,0 +1,162 @@
+#!/bin/sh
+# /init - CapsuleOS Hypervisor Protocol Layer 0 Boot Sequence
+# This script executes as PID 1 in the initial ramdisk environment
+# It establishes the foundational boot layer before handing off to GGE
+
+set -e  # Exit on error
+
+echo "==================================================================="
+echo "--- CapsuleOS Hypervisor Protocol Layer 0 (Bare-Metal Boot) ---"
+echo "==================================================================="
+
+# ============================================================================
+# PHASE 1: Hardware Initialization Verification
+# ============================================================================
+# Note: Low-level hardware initialization (CPU, MMU, interrupts) is handled
+# by the kernel's early entry point (in assembly/Rust). This phase verifies
+# that the kernel completed initialization successfully.
+
+echo "INFO: Low-level hardware initialization complete (CPU, memory, MMU)."
+echo "INFO: Kernel version: CapsuleOS/0.1.0"
+echo "INFO: Architecture: x86_64"
+
+# Verify kernel message buffer is accessible
+if [ ! -c /dev/kmsg ]; then
+    echo "FATAL: /dev/kmsg not available. Kernel initialization failed."
+    exec /bin/sh
+fi
+
+# ============================================================================
+# PHASE 2: Early Mount of Content-Addressed Storage (CAS)
+# ============================================================================
+echo ""
+echo "STEP: Attempting early mount of Content-Addressed Storage..."
+
+# The cas-mount utility connects to the local IPFS node or CAS block device
+# and mounts it at /mnt/cas, making all content-addressed data accessible
+/sbin/cas-mount --config /etc/genesis.cfg
+
+if [ $? -ne 0 ]; then
+    echo "FATAL: CAS mount failed. Cannot proceed with boot."
+    echo "ERROR: Unable to access content-addressed storage."
+    echo "Dropping to recovery shell for debugging..."
+    exec /bin/sh
+fi
+
+echo "SUCCESS: CAS mounted at /mnt/cas."
+
+# ============================================================================
+# PHASE 3: Load Root Capsule (⊙₀) into Memory
+# ============================================================================
+echo ""
+echo "STEP: Loading Root Capsule (⊙₀) from CAS..."
+
+# Extract root CID from configuration
+ROOT_CID=$(grep 'root_cid' /etc/genesis.cfg | awk -F'= ' '{print $2}')
+ROOT_CAPSULE_PATH="/mnt/cas/cid/$ROOT_CID"
+
+echo "INFO: Root Capsule CID: $ROOT_CID"
+echo "INFO: Root Capsule Path: $ROOT_CAPSULE_PATH"
+
+# Verify the capsule exists in CAS
+if [ ! -f "$ROOT_CAPSULE_PATH" ]; then
+    echo "FATAL: Root Capsule not found in CAS."
+    echo "ERROR: Expected capsule at $ROOT_CAPSULE_PATH"
+    exec /bin/sh
+fi
+
+# ============================================================================
+# PHASE 3a: Cryptographic Verification of Root Capsule
+# ============================================================================
+echo ""
+echo "SUBSTEP: Verifying Root Capsule cryptographic signature..."
+
+# The capsule-loader performs Ed25519 signature verification
+# This establishes the Chain of Trust: GRUB -> Kernel -> ⊙₀
+/sbin/capsule-loader --verify --path "$ROOT_CAPSULE_PATH"
+
+if [ $? -ne 0 ]; then
+    echo "FATAL: Root Capsule signature verification FAILED."
+    echo "ERROR: Cryptographic chain of trust broken."
+    echo "Security violation detected. Halting boot."
+    exec /bin/sh
+fi
+
+echo "INFO: Root Capsule signature verified."
+echo "INFO: Cryptographic chain of trust established: GRUB -> Kernel -> ⊙₀"
+
+# ============================================================================
+# PHASE 3b: Load Root Capsule into Memory and Log Hash
+# ============================================================================
+echo ""
+echo "SUBSTEP: Loading Root Capsule into kernel memory..."
+
+# Compute deterministic hash of the capsule for boot audit trail
+MODULE_HASH=$(/sbin/hash-utility --hash "$ROOT_CAPSULE_PATH")
+echo "INFO: Root Capsule Hash: $MODULE_HASH"
+
+# Log to kernel message buffer for deterministic boot verification
+echo "LOG: ⊙₀ Loaded. Hash: $MODULE_HASH" > /dev/kmsg
+
+# Load the capsule into memory at fixed address (0x40000000)
+# This makes the capsule accessible to the GGE runtime
+/sbin/capsule-loader --load --path "$ROOT_CAPSULE_PATH" --target-addr 0x40000000
+
+if [ $? -ne 0 ]; then
+    echo "FATAL: Failed to load Root Capsule into memory."
+    exec /bin/sh
+fi
+
+echo "SUCCESS: Root Capsule (⊙₀) loaded into memory at 0x40000000"
+
+# ============================================================================
+# PHASE 4: Spawn Genesis Graph Engine (GGE) Runtime
+# ============================================================================
+echo ""
+echo "STEP: Spawning Genesis Graph Engine (GGE) runtime..."
+
+# Extract GGE path from configuration
+GGE_PATH=$(grep 'gge_path' /etc/genesis.cfg | awk -F'= ' '{print $2}')
+GGE_FLAGS=$(grep 'gge_flags' /etc/genesis.cfg | awk -F'= ' '{print $2}')
+
+echo "INFO: GGE Runtime Path: $GGE_PATH"
+echo "INFO: GGE Flags: $GGE_FLAGS"
+
+# Verify GGE runtime exists
+if [ ! -x "$GGE_PATH" ]; then
+    echo "FATAL: GGE runtime not found or not executable."
+    echo "ERROR: Expected executable at $GGE_PATH"
+    exec /bin/sh
+fi
+
+# ============================================================================
+# PHASE 4a: Hand-off to GGE (Primordial Process)
+# ============================================================================
+echo ""
+echo "==================================================================="
+echo "--- Transitioning to Genesis Graph Engine (Primordial Process) ---"
+echo "==================================================================="
+echo ""
+echo "INFO: Replacing /init process with GGE runtime..."
+echo "INFO: GGE will become PID 1 and take over system control."
+echo ""
+
+# Use 'exec' to replace the current /init process with GGE
+# The GGE runtime will:
+# 1. Register ⊙₀ as its initial graph state
+# 2. Begin evaluation of rewrite rules
+# 3. Establish the CapsuleOS runtime environment
+# 4. Spawn child processes as needed
+exec $GGE_PATH --init-capsule "$ROOT_CID" --log-hash "$MODULE_HASH" $GGE_FLAGS
+
+# ============================================================================
+# UNREACHABLE CODE
+# ============================================================================
+# If execution reaches this point, the exec failed and GGE did not start
+echo ""
+echo "FATAL: Genesis Graph Engine failed to execute."
+echo "ERROR: exec() returned unexpectedly"
+echo "CRITICAL: System cannot continue without GGE runtime."
+echo ""
+echo "Halting boot sequence."
+exec /bin/sh

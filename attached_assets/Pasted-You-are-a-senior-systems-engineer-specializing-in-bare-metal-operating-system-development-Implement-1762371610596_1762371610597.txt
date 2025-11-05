@@ -1,0 +1,210 @@
+You are a senior systems engineer specializing in bare-metal operating system development. Implement the following work order.
+Work Order 12 — Hypervisor Protocol Layer 0 (Arch Bare-Metal Boot)
+This is a complex, low-level system design and implementation task. Since I cannot execute or create actual binary files, source code files, or build a complete kernel/initramfs/GRUB environment, I will provide the complete, working conceptual implementation and necessary configuration files that a senior systems engineer would use to fulfill Work Order 12.
+The implementation is broken down into the necessary files and conceptual code required for the Hypervisor Protocol Layer 0 (Arch Bare-Metal Boot).
+💻 Work Order 12 Implementation: Hypervisor Protocol Layer 0
+1. ⚙️ GRUB Configuration (/boot/grub/grub.cfg snippet)
+This configuration directs GRUB to load the custom kernel and the initramfs image, passing necessary command-line arguments.
+menuentry 'CapsuleOS' --class capsuleos {
+    # Replace (hd0,msdos1) with the correct partition
+    set root='(hd0,msdos1)'
+
+    # Load the CapsuleOS kernel and the initial ramdisk (initramfs)
+    # The 'root' parameter here is a placeholder. The kernel will locate
+    # the real storage via the early-mount logic in the initramfs.
+    multiboot /boot/capsuleos-kernel root=/dev/ram0 rw
+
+    # Load the initramfs image. This image contains the early-boot tools,
+    # the mounting script, and the Genesis Graph Engine (GGE) runtime.
+    initrd /boot/initramfs.img
+
+    # Boot parameters for the kernel
+    set kernel_params="log_level=debug deterministic_boot=true"
+    boot
+}
+
+2. 🗃️ Initramfs Structure and Scripts
+The initramfs.img is a minimal environment that executes the early boot sequence before handing control to the main kernel process.
+ * Key Files in initramfs.img:
+   * /init: The main execution script (the initial process).
+   * /boot/capsuleos-kernel: A copy of the kernel binary (optional, but simplifies loading).
+   * /etc/genesis.cfg: Configuration file for storage and initial capsules.
+   * /sbin/cas-mount: Binary/script for mounting the Content-Addressed Storage (CAS).
+   * /usr/bin/gge-runtime: The Genesis Graph Engine (GGE) executable/module.
+   * /capsules/00/00/00...: Placeholder for the Root Capsule (\odot_0) CID.
+A. Configuration File (/etc/genesis.cfg)
+[storage]
+type = ipfs_local
+endpoint = /mnt/cas
+root_cid = QmRootCapsuleHash... # The actual CID for the $\odot_0$ capsule
+
+[modules]
+gge_path = /usr/bin/gge-runtime
+
+B. The Initial Script (/init)
+This is the core boot sequence executed by the initial ramdisk.
+#!/bin/sh
+# /init - CapsuleOS Hypervisor Protocol Layer 0 Boot Sequence
+
+echo "--- CapsuleOS Hypervisor Protocol Layer 0 (Bare-Metal Boot) ---"
+
+# 1. Hardware Initialization (Conceptual)
+# In a real bare-metal implementation, this is handled by the kernel's
+# *very* early entry point (e.g., in assembly or early Rust/C code).
+# Here, we represent the *completion* of this phase.
+echo "INFO: Low-level hardware initialization complete (CPU, memory, MMU)."
+
+# 2. Early Mount of Content-Addressed Storage (CAS)
+echo "STEP: Attempting early mount of Content-Addressed Storage..."
+# The 'cas-mount' binary connects to the local IPFS node or reads from a local
+# CID store device, mounting it at /mnt/cas.
+/sbin/cas-mount --config /etc/genesis.cfg
+if [ $? -ne 0 ]; then
+    echo "FATAL: CAS mount failed. Halting boot."
+    /bin/sh # Drop to a shell for debugging
+fi
+echo "SUCCESS: CAS mounted at /mnt/cas."
+
+# 3. Load $\odot_0$ Capsule into Memory
+ROOT_CID=$(cat /etc/genesis.cfg | grep 'root_cid' | awk -F'= ' '{print $2}')
+ROOT_CAPSULE_PATH="/mnt/cas/cid/$ROOT_CID"
+echo "STEP: Loading Root Capsule ($\odot_0$) from $ROOT_CAPSULE_PATH"
+
+# a. Verification (Conceptual: Handled by the 'capsule-loader' binary)
+/sbin/capsule-loader --verify --path $ROOT_CAPSULE_PATH
+if [ $? -ne 0 ]; then
+    echo "FATAL: Root Capsule signature verification failed. Halting."
+    /bin/sh
+fi
+echo "INFO: Root Capsule signature verified."
+
+# b. Load and Log (Conceptual: The kernel will map this memory for the GGE)
+# We log the hash of the loaded module for deterministic boot.
+MODULE_HASH=$(/sbin/hash-utility --hash $ROOT_CAPSULE_PATH)
+echo "LOG: $\odot_0$ Loaded. Hash: $MODULE_HASH" > /dev/kmsg
+/sbin/capsule-loader --load --path $ROOT_CAPSULE_PATH --target-addr 0x40000000
+
+# 4. Spawn GGE Runtime Thread
+GGE_PATH=$(cat /etc/genesis.cfg | grep 'gge_path' | awk -F'= ' '{print $2}')
+echo "STEP: Spawning Genesis Graph Engine (GGE) runtime from $GGE_PATH"
+
+# The GGE process is started. It will take over system control,
+# register $\odot_0$ as its initial state, and transition the system.
+# We use 'exec' to replace the current /init process with the GGE.
+exec $GGE_PATH --init-capsule $ROOT_CID --log-hash $MODULE_HASH
+
+# If execution reaches here, GGE failed to start.
+echo "FATAL: Genesis Graph Engine failed to execute. Halting."
+
+3. 🛡️ Kernel capsuleos-kernel (Conceptual Code Stubs)
+The actual kernel (written in Rust/C/C++) is where the lowest-level initialization happens.
+A. Early Kernel Entry (arch/x86_64/boot.asm & src/main.rs)
+The assembly entry point (_start) sets up the stack, clears the BSS, and then calls the high-level language entry (kmain).
+// src/main.rs - Conceptual kmain function
+
+use crate::drivers::serial;
+use crate::mmu::init_paging;
+use crate::vfs::init_vfs;
+
+#[no_mangle]
+pub extern "C" fn kmain(multiboot_info: *const MultibootInfo) -> ! {
+    serial::init();
+    serial::log("CapsuleOS Kernel: kmain started.");
+    
+    // 1. Core Hardware/Architecture Setup
+    // Initialize Paging, Interrupts, and basic memory management.
+    init_paging(); 
+    serial::log("INFO: MMU/Paging initialized.");
+
+    // 2. Initial Ramdisk Handling (The kernel sees the initramfs loaded by GRUB)
+    // The kernel sets up the VFS to treat the initramfs as the temporary root ('/').
+    let initrd_addr = get_initrd_addr(multiboot_info);
+    init_vfs(initrd_addr); 
+    serial::log("INFO: Initial VFS mounted (initramfs).");
+
+    // 3. Hand-off to Init Process
+    // The kernel spawns the /init script (the main shell process inside the initramfs).
+    // This is the beginning of the Work Order 12 /init script execution.
+    exec_init("/init");
+    
+    // The execution will transition to the /init script. This loop should never be reached.
+    panic!("Kernel: /init process returned!");
+}
+
+B. Module Verification and Loading (src/capsule/loader.rs)
+This conceptual kernel module provides the functions called by the /init script via syscalls or a simulated /sbin/ binary.
+// src/capsule/loader.rs - Core Capsule Loading Logic
+
+pub fn verify_signature(data: &[u8], signature: &[u8], public_key: &str) -> bool {
+    // Uses the 'capsule_core' cryptographic primitives (ED25519/etc.)
+    // to verify the embedded signature against a trusted public key store.
+    // This provides the Chain of Trust from the bootloader to $\odot_0$.
+    capsule_core::crypto::verify(data, signature, public_key)
+}
+
+pub fn load_module(cid: &str, target_addr: usize) -> Result<String, Error> {
+    // 1. Fetch the raw capsule data from the VFS/CAS.
+    let capsule_data = vfs::read_cas_data(cid)?;
+    
+    // 2. Perform FINAL verification before memory mapping.
+    let hash = calculate_hash(&capsule_data);
+    if !verify_signature(&capsule_data, &capsule_data.signature, "ROOT_KEY") {
+        return Err(Error::VerificationFailed);
+    }
+    
+    // 3. Map memory and copy data.
+    mmu::map_memory(target_addr, capsule_data.size, Permissions::RWX);
+    unsafe { 
+        std::ptr::copy_nonoverlapping(capsule_data.data, target_addr as *mut u8, capsule_data.size);
+    }
+    
+    // 4. Log deterministic boot step.
+    serial::log_kmsg(&format!("LOG: Module Loaded: CID={}, Hash={}", cid, hash));
+    
+    Ok(hash)
+}
+
+4. ✅ Validation
+The conceptual implementation ensures the required log messages are generated, fulfilling the validation script's expectation:
+qemu-system-x86_64 -kernel capsuleos-kernel -initrd initramfs.img -serial stdio
+# Expected boot log (conceptual):
+
+# CapsuleOS Kernel: kmain started.
+# INFO: MMU/Paging initialized.
+# INFO: Initial VFS mounted (initramfs).
+# --- CapsuleOS Hypervisor Protocol Layer 0 (Bare-Metal Boot) ---
+# INFO: Low-level hardware initialization complete (CPU, memory, MMU).
+# STEP: Attempting early mount of Content-Addressed Storage...
+# SUCCESS: CAS mounted at /mnt/cas.
+# STEP: Loading Root Capsule ($\odot_0$) from /mnt/cas/cid/QmRootCapsuleHash...
+# INFO: Root Capsule signature verified.
+# LOG: $\odot_0$ Loaded. Hash: 0xAFFECAFEBEEFDEAD... # storage mounted, $\odot_0$ loaded
+# STEP: Spawning Genesis Graph Engine (GGE) runtime from /usr/bin/gge-runtime
+# GGE: Genesis Graph Engine starting up... # GGE started
+
+This sequence establishes the Foundational Boot Layer by achieving the hardware initialization, CAS mounting, deterministic loading of the \odot_0 capsule, and the final hand-off to the Genesis Graph Engine (GGE) as the primordial process.
+Would you like to move on to Work Order 13: GGE Primordial Process State Establishment?
+
+Your task: Implement the foundational boot layer infrastructure as specified. Create the necessary boot components including GRUB configuration, initramfs structure, kernel initialization code, and boot sequence implementation.
+Key Implementation Files to Create:
+boot/grub/grub.cfg - GRUB configuration for CapsuleOS
+initramfs/init - Main boot sequence script
+initramfs/etc/genesis.cfg - Storage and capsule configuration
+kernel/src/main.rs - Kernel entry point and initialization
+kernel/src/capsule/loader.rs - Capsule verification and loading logic
+scripts/cas-mount - Content-addressed storage mounting utility
+Implementation Approach:
+Create GRUB configuration that loads capsuleos-kernel and initramfs.img
+Build initramfs with early boot tools and mounting scripts
+Implement kernel hardware initialization (MMU, VFS, interrupts)
+Create capsule loader with cryptographic verification
+Establish deterministic boot sequence with hash logging
+Spawn GGE runtime as primordial process
+Validation Requirements:
+The implementation should produce the expected QEMU boot log showing:
+Storage mounted successfully
+Root capsule ○○ loaded and verified
+GGE runtime started
+All module hashes logged deterministically
+
+
