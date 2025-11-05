@@ -514,6 +514,10 @@ fn substitute_match_arm(
         avoid_set.extend(replacement_free_vars);
         avoid_set.insert(var.to_string());
         
+        if let Some(guard) = &arm.guard {
+            avoid_set.extend(free_vars(guard));
+        }
+        
         let mut renaming_map = HashMap::new();
         let mut new_pattern = arm.pattern.clone();
         
@@ -1462,6 +1466,46 @@ mod tests {
         let result2 = substitute(&substitute(&expr, "y", &int(2)), "x", &int(1));
         
         assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_match_guard_capture_prevention() {
+        reset_gensym();
+        let pattern = Pattern::Var("x".to_string());
+        let arm = MatchArm {
+            pattern,
+            guard: Some(Box::new(var("x$0"))),
+            body: Box::new(var("y")),
+        };
+        
+        let expr = Expression::Match {
+            expr: Box::new(var("e")),
+            arms: vec![arm],
+        };
+        
+        let result = substitute(&expr, "y", &var("x"));
+        
+        match result {
+            Expression::Match { arms, .. } => {
+                match &arms[0].pattern {
+                    Pattern::Var(name) => {
+                        assert!(name.starts_with("x$"));
+                        assert_ne!(name, "x$0");
+                    }
+                    _ => panic!("Expected var pattern"),
+                }
+                
+                match &arms[0].guard {
+                    Some(guard) => {
+                        assert_eq!(**guard, var("x$0"));
+                    }
+                    None => panic!("Expected guard"),
+                }
+                
+                assert_eq!(arms[0].body, Box::new(var("x")));
+            }
+            _ => panic!("Expected match"),
+        }
     }
 
     #[test]

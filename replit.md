@@ -61,7 +61,8 @@ Created complete capture-avoiding substitution engine in glyph_engine crate:
 - Property tests (determinism, idempotence, commutativity, α-equivalence preservation)
 - Comprehensive integration tests (Church numerals, nested structures, complex scenarios)
 
-**Test Status**: All 47 substitute tests passing (89 total glyph_engine tests)
+**Test Status**: All 48 substitute tests passing (90 total glyph_engine tests)
+- Includes regression test for guard free variable capture prevention
 
 ### 2025-11-04: Pattern Matching Engine (Work Order 6) ✓
 Created complete glyph_engine crate with pattern matching functionality for GΛLYPH expressions:
@@ -205,9 +206,9 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 
 ## Project Architecture
 
-### glyph_engine (89/89 tests ✓)
+### glyph_engine (90/90 tests ✓)
 
-**Capture-Avoiding Substitution Engine (47 tests):**
+**Capture-Avoiding Substitution Engine (48 tests):**
 - Complete capture-avoiding substitution with α-conversion
 - Fresh name generation via atomic gensym counter
 - Free variables analysis with scope tracking
@@ -365,10 +366,10 @@ All tests must run with `--test-threads=1` for deterministic validation:
 cargo test --workspace -- --test-threads=1
 ```
 
-**Current Test Results: 245 tests passing**
+**Current Test Results: 246 tests passing**
 - capsule_core: 10 tests ✓
 - genesis_graph: 18 tests ✓
-- glyph_engine: 89 tests ✓ (42 pattern matching + 47 substitution)
+- glyph_engine: 90 tests ✓ (42 pattern matching + 48 substitution)
 - glyph_lexer: 92 tests ✓
 - glyph_parser: 36 tests ✓
 
