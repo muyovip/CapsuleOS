@@ -8,6 +8,7 @@
 use ed25519_dalek::{PublicKey, Signature, Verifier};
 use serde::{Deserialize, Serialize};
 use serde_cbor;
+use serde_cbor::value::to_value;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -107,19 +108,19 @@ fn canonical_serialize_without_signature(man: &CapsuleManifest) -> Vec<u8> {
     let mut map = BTreeMap::new();
     map.insert(
         "id",
-        serde_cbor::to_value(&man.id).expect("to_value id should not fail"),
+        to_value(&man.id).expect("to_value id should not fail"),
     );
     map.insert(
         "parent",
-        serde_cbor::to_value(&man.parent).expect("to_value parent should not fail"),
+        to_value(&man.parent).expect("to_value parent should not fail"),
     );
     map.insert(
         "lineage",
-        serde_cbor::to_value(&man.lineage).expect("to_value lineage should not fail"),
+        to_value(&man.lineage).expect("to_value lineage should not fail"),
     );
     map.insert(
         "metadata",
-        serde_cbor::to_value(&man.metadata).expect("to_value metadata should not fail"),
+        to_value(&man.metadata).expect("to_value metadata should not fail"),
     );
     // Serializing the BTreeMap will produce deterministic CBOR ordering for these keys.
     serde_cbor::to_vec(&map).expect("canonical serialize should not fail")
