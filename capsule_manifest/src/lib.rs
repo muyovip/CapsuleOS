@@ -98,32 +98,29 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<CapsuleManifest, ManifestError> {
     Ok(manifest)
 }
 
+/// Helper struct for canonical serialization without signature field.
+/// Field order matches the required canonical order: id, parent, lineage, metadata.
+#[derive(Serialize)]
+struct CanonicalManifest<'a> {
+    id: &'a str,
+    parent: &'a Option<String>,
+    lineage: &'a Vec<String>,
+    metadata: &'a BTreeMap<String, serde_cbor::Value>,
+}
+
 /// Serialize the manifest into canonical CBOR bytes **excluding** the `signature` field.
 /// This is the exact byte sequence that should be signed/verified.
-/// We build a temporary struct-like map to ensure the `signature` field is omitted.
+/// Fields are serialized in the required order: id, parent, lineage, metadata.
 fn canonical_serialize_without_signature(man: &CapsuleManifest) -> Vec<u8> {
-    // We'll serialize as a CBOR map with the same fields except signature, and ensure deterministic key order.
-    // Use BTreeMap to enforce ordering of keys by their textual name (stable).
-    // Key order chosen: id, parent, lineage, metadata
-    let mut map = BTreeMap::new();
-    map.insert(
-        "id",
-        to_value(&man.id).expect("to_value id should not fail"),
-    );
-    map.insert(
-        "parent",
-        to_value(&man.parent).expect("to_value parent should not fail"),
-    );
-    map.insert(
-        "lineage",
-        to_value(&man.lineage).expect("to_value lineage should not fail"),
-    );
-    map.insert(
-        "metadata",
-        to_value(&man.metadata).expect("to_value metadata should not fail"),
-    );
-    // Serializing the BTreeMap will produce deterministic CBOR ordering for these keys.
-    serde_cbor::to_vec(&map).expect("canonical serialize should not fail")
+    // Create a temporary struct with fields in the canonical order
+    let canonical = CanonicalManifest {
+        id: &man.id,
+        parent: &man.parent,
+        lineage: &man.lineage,
+        metadata: &man.metadata,
+    };
+    // Serde serializes struct fields in declaration order, ensuring deterministic CBOR
+    serde_cbor::to_vec(&canonical).expect("canonical serialize should not fail")
 }
 
 /// Verify the manifest's signature and lineage.
