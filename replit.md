@@ -1,7 +1,7 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of eight foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of nine foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
@@ -11,8 +11,119 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 6. **rewrite_tx** - Transactional rewrite system for GenesisGraph with rollback capabilities
 7. **capsule_manifest** - Manifest parser, verifier, and loader with Ed25519 signatures and lineage verification
 8. **genesis_engine** - Genesis Graph Engine (GGE) Runtime with parallel pattern matching and deterministic evaluation
+9. **cyberus_cli** - Command-line interface for CapsuleOS node control and Γ registry operations
 
 ## Recent Changes
+
+### 2025-11-05: Cyberus CLI (Work Order 11) ✓
+Created complete cyberus_cli crate with command-line interface for CapsuleOS node control:
+
+**Commands:**
+- `garden` - Inspect and modify nodes registered in Γ (set labels, attributes)
+- `view` - View node data in canonical text (JSON) or CBOR format
+- `forge` - Create new capsules from manifest files (JSON or CBOR)
+- `resonate` - Verify integrity of Γ registry (lineage validation)
+
+**Core Features:**
+- Sovereignty enforcement: nodes with lineage [id, ⊙₀] are immutable
+- Canonical text output: deterministic JSON with BTreeMap key ordering
+- CBOR binary output: compact binary serialization for node data
+- Audit logging: all mutations recorded to cyberus_audit.log with timestamps
+- Manifest parsing: accepts both JSON and CBOR manifest formats
+- Path normalization: supports both "/node/1" and "node/1" syntax
+
+**CLI Architecture:**
+- `Cli` - Main command parser with clap derive macros
+- `Commands` - Garden, View, Forge, Resonate subcommands
+- `GardenOp` - SetLabel, SetAttr, RemoveAttr operations
+- `GraphNode` - Node data with BTreeMap attrs for canonical ordering
+- `GenesisGraph` - Simulated Γ registry (mock for demonstration)
+- `CliError` - Comprehensive error types with thiserror
+
+**Sovereignty Rules:**
+- Direct children of ⊙₀ (lineage length == 2) are sovereign and immutable
+- Mutation attempts on sovereign nodes return `Sovereignty` error
+- Child nodes (lineage length > 2) are mutable via garden commands
+- All mutations are audited with RFC3339 timestamps
+
+**Garden Operations:**
+- `set-label <label>` - Set display label for node
+- `set-attr <key> <value>` - Add or update node attribute
+- `remove-attr <key>` - Delete node attribute by key
+
+**View Formats:**
+- `--format text` (default) - Canonical JSON with pretty printing
+- `--format cbor` - Binary CBOR bytes to stdout
+
+**Forge Workflow:**
+1. Parse manifest file (try JSON first, then CBOR)
+2. Validate lineage ends with ROOT_ID ("⊙₀")
+3. Register node in Γ registry
+4. Append audit log entry
+5. Return OK on success
+
+**Resonate Validation:**
+- Lineage must be non-empty
+- First element must equal node ID
+- Last element must be ROOT_ID
+- Prints "id: OK" or "id: ERROR - message"
+- Exits with code 2 if any errors found
+
+**Test Coverage (4 tests):**
+- Canonical text ordering with BTreeMap
+- Sovereignty enforcement on root children
+- JSON manifest parsing and registration
+- Lineage validation error detection
+
+**Test Status**: All 4 cyberus_cli tests passing
+
+**Dependencies:**
+- `clap = { version = "4.2", features = ["derive"] }` - CLI argument parsing
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `serde_json = "1.0"` - JSON encoding/decoding
+- `serde_cbor = "0.11"` - CBOR encoding/decoding
+- `thiserror = "1.0"` - Error handling
+- `time = { version = "0.3", features = ["formatting"] }` - Timestamp formatting
+- `tempfile = "3.6"` - Temporary files (dev only)
+
+**Design Decisions:**
+- BTreeMap for attrs ensures deterministic JSON key ordering
+- Mock GenesisGraph implementation for standalone CLI demonstration
+- Audit log append-only for tamper-evident mutation tracking
+- Sovereignty at lineage level (not individual permissions)
+- Support both JSON and CBOR for maximum flexibility
+- RFC3339 timestamps for audit log entries
+
+**Usage Examples:**
+```bash
+# View node in canonical JSON
+cargo run --package cyberus_cli -- view /node/1
+
+# View node as CBOR bytes
+cargo run --package cyberus_cli -- view /node/1 --format cbor
+
+# Set node label (allowed for non-sovereign nodes)
+cargo run --package cyberus_cli -- garden /node/1/child set-label "New Label"
+
+# Set node attribute
+cargo run --package cyberus_cli -- garden /node/1/child set-attr color blue
+
+# Remove node attribute
+cargo run --package cyberus_cli -- garden /node/1/child remove-attr color
+
+# Forge capsule from manifest
+cargo run --package cyberus_cli -- forge manifest.json
+
+# Verify Γ registry integrity
+cargo run --package cyberus_cli -- resonate
+```
+
+**Integration Notes:**
+- Current implementation uses in-process mock GenesisGraph
+- Production: replace `demos_graph()` with IPC/RPC client to actual Γ
+- Audit log should be append-only, tamper-evident, signed in production
+- Consider adding Ed25519 signing for audit entries
+- Future: add --audit-file flag to configure log destination
 
 ### 2025-11-05: Genesis Graph Engine Runtime (Work Order 10) ✓
 Created complete genesis_engine crate with parallel pattern matching runtime for evaluating rewrite rules:

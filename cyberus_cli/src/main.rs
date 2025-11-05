@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_cbor;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -393,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_forge_accepts_json_and_registers() {
-        let g = GenesisGraph::new();
+        let _g = GenesisGraph::new();
         // construct a manifest JSON for a new node
         let node = GraphNode {
             id: "node/x".to_string(),
