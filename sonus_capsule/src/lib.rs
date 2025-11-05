@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use std::f32::consts::PI;
 use thiserror::Error;
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 /// Canonical sampling rate in Hz
 pub const SAMPLE_RATE: u32 = 48_000;
@@ -96,7 +96,7 @@ fn synth_sine(freq: f32, duration: f32, amp: f32, sr: u32) -> Result<WaveformExp
 }
 
 /// Helper function to perform canonical CBOR serialization.
-fn canonical_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, SonusError> {
+fn canonical_serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, SonusError> {
     let mut bytes = Vec::new();
     ciborium::ser::into_writer(value, &mut bytes)
         .map_err(|e| SonusError::Serialization(format!("CBOR serialization failed: {:?}", e)))?;

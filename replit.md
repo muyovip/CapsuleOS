@@ -25,7 +25,125 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 **Physics Infrastructure:**
 14. **physix_capsule** - Deterministic rigid-body physics engine with event logging
 
+**Audio Infrastructure:**
+15. **sonus_capsule** - Deterministic wavefield synthesis engine with content-addressable waveforms
+
 ## Recent Changes
+
+### 2025-11-05: Sonus Capsule (Work Order 15) ✓
+Created complete sonus_capsule crate with deterministic audio synthesis and content-addressable waveforms:
+
+**Core Features:**
+- Deterministic wavefield synthesis at 48kHz sampling rate
+- Sample-accurate sine wave generation
+- Content-addressable audio: SHA256("AudioV1" || CBOR(samples))
+- Canonical CBOR serialization for waveforms
+- Expression model for synthesis primitives
+- Deterministic guarantees: identical inputs → identical waveform hashes
+
+**Audio Architecture:**
+
+**Expression Schema:**
+- `Sine` - Frequency (Hz), duration (sec), amplitude (0–1)
+- Extensible to noise, FM, envelopes, filters, etc.
+
+**WaveformExpr:**
+- `sample_rate` - Fixed at 48,000 Hz
+- `samples` - Vec<f32> PCM data
+- `content_hash` - SHA256("AudioV1" || CBOR(samples))
+- `metadata` - AudioMetadata with expression, length, duration
+
+**Synthesis Pipeline:**
+1. **Expression Parsing** - Interpret synthesis primitive (e.g., Sine)
+2. **Sample Generation** - Deterministic sample-by-sample calculation
+3. **CBOR Serialization** - Canonical encoding of samples
+4. **Content Hashing** - SHA256 with "AudioV1" prefix
+5. **Metadata Capture** - Store expression, length, duration
+
+**API Usage:**
+```rust
+use sonus_capsule::{synth, write_waveform_cbor, Expression};
+
+// Create expression
+let expr = Expression::Sine {
+    freq: 440.0,
+    duration: 1.0,
+    amp: 0.5,
+};
+
+// Synthesize waveform
+let waveform = synth(&expr)?;
+
+// Write to CBOR file
+write_waveform_cbor(Path::new("sine.cbor"), &waveform)?;
+
+// Content hash for Γ registration
+println!("Hash: {}", waveform.content_hash);
+```
+
+**Deterministic Guarantees:**
+1. Fixed sample rate (48 kHz) - No variable sampling
+2. Sample-accurate synthesis - Deterministic float calculations
+3. Fixed iteration order - Sequential sample generation
+4. Canonical CBOR encoding - Deterministic serialization
+5. Reproducible hashes - Same inputs always produce same hash
+
+**Test Results:**
+```
+✓ test_synth_sine_440hz_deterministic - PASSED
+  ✓ Multiple runs produce identical hashes
+  ✓ Hash matches recomputed hash
+
+✓ test_deterministic_synthesis_multiple_runs - PASSED
+  ✓ Run 1, 2, 3 produce identical samples
+  ✓ Run 1, 2, 3 produce identical hashes
+
+✓ test_waveform_metadata - PASSED
+  ✓ Metadata contains correct parameters
+  ✓ Sample count matches duration * sample_rate
+```
+
+**Example Output (synth_sine):**
+```
+Synthesizing sine wave:
+  Frequency: 440 Hz
+  Duration: 1 sec
+  Amplitude: 0.5
+
+✅ Synthesized 440Hz for 1s -> sine_440.cbor
+Content Hash: cf8d773505021a53102d0ec362affec9ae5e773d905a7aa53c140a4f56a407e7
+Sample Count: 48000
+Sample Rate: 48000 Hz
+```
+
+**Integration with CapsuleOS:**
+- Γ-loadable audio capsule with lineage tracking
+- Waveforms as content-addressable artifacts
+- Expression-based synthesis for reproducibility
+- CBOR serialization for cross-platform compatibility
+
+**Future Enhancements:**
+- Additive synthesis (multiple sine waves)
+- Noise generators (white, pink, brown)
+- Envelope generators (ADSR)
+- Filters (low-pass, high-pass, band-pass)
+- FM synthesis
+- Wavetable synthesis
+- Effects (reverb, delay, distortion)
+- Real-time CPAL playback mode
+
+**Design Decisions:**
+- Fixed 48 kHz ensures professional audio quality
+- Float32 samples for precision and compatibility
+- Sample-accurate synthesis for determinism
+- CBOR for canonical serialization
+- SHA-256 with "AudioV1" prefix for content addressing
+- Expression model separates specification from synthesis
+
+**Files Created:**
+- `sonus_capsule/src/lib.rs` - Core API, Expression, WaveformExpr, synth
+- `sonus_capsule/examples/synth_sine.rs` - CLI synthesis example
+- `sonus_capsule/tests/sonus_tests.rs` - Determinism tests
 
 ### 2025-11-05: Physix Capsule (Work Order 14) ✓
 Created complete physix_capsule crate with deterministic rigid-body physics simulation:
