@@ -1,15 +1,89 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of five foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of six foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
 3. **glyph_parser** - Recursive descent parser and AST for GΛLYPH
 4. **genesis_graph** - Content-addressable DAG for cryptographic lineage and dependencies
-5. **glyph_engine** - Pattern matching engine for GΛLYPH expressions
+5. **glyph_engine** - Pattern matching and substitution engines for GΛLYPH expressions
+6. **rewrite_tx** - Transactional rewrite system for GenesisGraph with rollback capabilities
 
 ## Recent Changes
+
+### 2025-11-05: Transactional Rewrite System (Work Order 8) ✓
+Created complete rewrite_tx crate with transactional rule application for GenesisGraph:
+
+**Core Features:**
+- Transactional rule application with full rollback support
+- Priority-based rule ordering with deterministic tie-breaking
+- Graph snapshot and restoration for atomicity
+- Modification tracking for all graph operations
+- Thread-safe graph access with RwLock
+- Content-addressable hash verification
+- Deterministic node ordering for reproducible rewrites
+
+**Transaction System:**
+- `Transaction::begin()`: Start new transaction with ruleset
+- `Transaction::apply_ruleset()`: Apply rules to graph nodes in deterministic order
+- `Transaction::commit()`: Finalize transaction and compute post-state hash
+- `Transaction::rollback()`: Restore graph to pre-transaction state with hash verification
+- `apply_ruleset_transactionally()`: Convenience function for complete transactional workflow
+
+**Rewrite Rules:**
+- `RewriteRule`: Pattern + replacement with optional conditions
+- `RuleSet`: Collection of rules with priority-based sorting
+- Pattern matching integration for rule application
+- Substitution integration for replacement instantiation
+- First-match semantics (only first matching rule per node)
+
+**Data Structures:**
+- `GenesisGraph`: Thread-safe wrapped graph (Arc<RwLock<...>>)
+- `GraphSnapshot`: Complete graph state with content hash
+- `GraphNode`: Node with id, root_ref, data (Expression), metadata
+- `Modification`: Tracked changes (NodeUpdated, NodeAdded, NodeRemoved, EdgeAdded, EdgeRemoved)
+- `TransactionResult`: Pre/post hashes, rewrite count, modification list
+
+**Graph Operations:**
+- `new_wrapped()`: Create thread-safe graph from root node
+- `nodes_sorted_by_id()`: Deterministic node iteration (lexicographic by id)
+- `insert_node_internal()`: Add new node with hash validation
+- `update_node_internal()`: Modify existing node in-place
+- `remove_node_internal()`: Delete node and associated edges
+- `add_edge_internal()`: Link nodes with dependency/derivation/reference edges
+
+**Key Implementation Details:**
+- Snapshot-based isolation: Pre-state captured before rule application
+- Hash verification: Post-rollback hash must match pre-state hash
+- Priority sorting: Higher priority first, then lexicographic by id
+- Deterministic ordering: Nodes processed in id-sorted order
+- Error handling: Rollback on any rule application error
+- CBOR serialization: Deterministic snapshot encoding
+
+**Test Coverage (25 tests):**
+- Ruleset priority sorting and tie-breaking
+- Simple rewrite rules with pattern matching
+- Deterministic node ordering verification
+- Transaction isolation and rollback
+- Modification tracking
+- Snapshot serialization and determinism
+- Hash stability and comparison
+- Concurrent read access
+- Atomicity properties
+- Idempotent rules
+- Conditional rules
+- Empty rulesets
+- Comprehensive workflow integration
+
+**Test Status**: All 25 rewrite_tx tests passing
+
+**Design Choices:**
+- Content-addressed storage: Node hash computed from full node content
+- In-place updates: Nodes updated under original hash (not moved to new hash)
+- Snapshot-based rollback: Complete graph state restoration
+- RwLock for concurrency: Multiple readers OR single writer
+- Deterministic execution: Sorted iteration ensures reproducible results
 
 ### 2025-11-05: Capture-Avoiding Substitution Engine (Work Order 7) ✓
 Created complete capture-avoiding substitution engine in glyph_engine crate:
@@ -206,6 +280,37 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 
 ## Project Architecture
 
+### rewrite_tx (25/25 tests ✓)
+
+**Transactional Rewrite System (25 tests):**
+- Complete transactional rule application with rollback
+- Thread-safe graph operations via Arc<RwLock<GenesisGraph>>
+- Snapshot-based state management
+- Priority-based rule ordering with deterministic execution
+- Modification tracking for all graph changes
+- Hash verification for rollback correctness
+- Deterministic node iteration (lexicographic by id)
+
+**Core Components:**
+- `Transaction`: Begin/apply/commit/rollback lifecycle
+- `RuleSet`: Priority-sorted collection of rewrite rules
+- `RewriteRule`: Pattern + replacement + optional condition
+- `GenesisGraph`: Thread-safe wrapped graph with operations
+- `GraphSnapshot`: Complete graph state with content hash
+- `TransactionResult`: Pre/post hashes + modifications
+
+**Graph Operations:**
+- `new_wrapped()`: Create thread-safe graph from root node
+- `nodes_sorted_by_id()`: Deterministic node iteration
+- `insert_node_internal()`, `update_node_internal()`, `remove_node_internal()`
+- `add_edge_internal()`: Link nodes with cycle detection
+
+**Design Patterns:**
+- Snapshot isolation for atomicity
+- First-match semantics (one rule per node)
+- In-place updates (nodes kept under original hash)
+- CBOR-based deterministic serialization
+
 ### glyph_engine (90/90 tests ✓)
 
 **Capture-Avoiding Substitution Engine (48 tests):**
@@ -360,18 +465,28 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 - `ciborium = "0.2"` - CBOR encoding
 - `proptest = "1.4"` - Property-based testing (dev)
 
+### rewrite_tx
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `ciborium = "0.2"` - CBOR encoding
+- `sha2 = "0.10"` - SHA-256 hashing
+- `hex = "0.4"` - Hexadecimal encoding
+- `thiserror = "1.0"` - Error handling
+- `parking_lot = "0.12"` - Thread-safe RwLock
+- `proptest = "1.4"` - Property-based testing (dev)
+
 ## Testing
 All tests must run with `--test-threads=1` for deterministic validation:
 ```bash
 cargo test --workspace -- --test-threads=1
 ```
 
-**Current Test Results: 246 tests passing**
+**Current Test Results: 271 tests passing**
 - capsule_core: 10 tests ✓
 - genesis_graph: 18 tests ✓
 - glyph_engine: 90 tests ✓ (42 pattern matching + 48 substitution)
 - glyph_lexer: 92 tests ✓
 - glyph_parser: 36 tests ✓
+- rewrite_tx: 25 tests ✓
 
 ## Design Decisions
 
