@@ -1,7 +1,7 @@
 # CapsuleOS - Meta-Operating System Toolchain
 
 ## Project Overview
-CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of six foundational components:
+CapsuleOS is a new meta-operating system with a cryptographic foundation and custom language (GΛLYPH). This repository contains the core Rust implementation of seven foundational components:
 
 1. **capsule_core** - Cryptographic foundation for the Root Capsule (⊙₀) with content-addressable hashing
 2. **glyph_lexer** - Tokenizer/lexer for the GΛLYPH language
@@ -9,8 +9,67 @@ CapsuleOS is a new meta-operating system with a cryptographic foundation and cus
 4. **genesis_graph** - Content-addressable DAG for cryptographic lineage and dependencies
 5. **glyph_engine** - Pattern matching and substitution engines for GΛLYPH expressions
 6. **rewrite_tx** - Transactional rewrite system for GenesisGraph with rollback capabilities
+7. **capsule_manifest** - Manifest parser, verifier, and loader with Ed25519 signatures and lineage verification
 
 ## Recent Changes
+
+### 2025-11-05: CapsuleManifest System (Work Order 9) ✓
+Created complete capsule_manifest crate with cryptographic manifest verification and registry system:
+
+**Core Features:**
+- `CapsuleManifest` struct with deterministic CBOR serialization
+- `parse_manifest()` - Parse CBOR bytes into validated manifest
+- `verify_capsule()` - Ed25519 signature and lineage verification
+- `load_manifest()` - Verify and register manifest into Γ (Gamma)
+- `Gamma` registry - In-memory capsule storage with uniqueness checks
+
+**Manifest Structure:**
+- `id`: Unique capsule identifier
+- `parent`: Optional parent capsule reference
+- `signature`: Ed25519 signature bytes (64 bytes)
+- `lineage`: Chain from parent to root sentinel ⊙₀
+- `metadata`: BTreeMap for deterministic key ordering
+
+**Verification System:**
+- Ed25519 signature verification over canonical CBOR (signature field excluded)
+- Lineage validation: chain must end with ROOT_ID ("⊙₀")
+- Parent consistency: parent must equal first lineage entry when present
+- Returns `ProofResult` with signature_valid and lineage_valid booleans
+
+**Canonical Serialization:**
+- Signature computed over manifest WITHOUT signature field
+- Uses BTreeMap for deterministic field ordering (id, parent, lineage, metadata)
+- serde_cbor::to_vec provides stable CBOR encoding
+- Field declaration order affects CBOR structure (kept stable)
+
+**Error Types:**
+- `ManifestError`: CBOR deserialization and integrity errors
+- `VerifyError`: Signature/lineage verification failures
+- `LoadError`: Verification and registry errors
+
+**Test Coverage (5 tests):**
+- Happy path: parse, verify, and load valid manifest
+- Invalid signature detection (wrong keypair)
+- Tampered metadata detection (corrupted CBOR)
+- Lineage validation (must end with ⊙₀)
+- Duplicate registration prevention
+
+**Test Status**: All 5 capsule_manifest tests passing
+
+**Dependencies:**
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `serde_cbor = "0.11"` - CBOR encoding
+- `ed25519-dalek = "1.0"` - Ed25519 signatures
+- `thiserror = "1.0"` - Error handling
+- `hex = "0.4"` - Hexadecimal encoding
+- `rand = "0.7"` - Random number generation (dev only)
+
+**Design Decisions:**
+- BTreeMap for metadata ensures deterministic key ordering
+- Signature over canonical bytes (signature field omitted)
+- Lineage must be non-empty and terminate at ROOT_ID
+- Parent consistency enforced when present
+- Gamma registry prevents duplicate capsule IDs
 
 ### 2025-11-05: Transactional Rewrite System (Work Order 8) ✓
 Created complete rewrite_tx crate with transactional rule application for GenesisGraph:
@@ -405,6 +464,44 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 - Deterministic CBOR serialization via serde_cbor
 - Comprehensive testing of hash determinism and prefix handling
 
+### capsule_manifest (5/5 tests ✓)
+**CapsuleManifest Parser, Verifier, and Loader:**
+- `CapsuleManifest` struct with Ed25519 signature and lineage chain
+- `parse_manifest()` - Parse and validate CBOR manifest bytes
+- `verify_capsule()` - Cryptographic signature and lineage verification
+- `load_manifest()` - Combined verify-and-register operation
+- `Gamma` registry - In-memory capsule storage with duplicate prevention
+- ROOT_ID constant ("⊙₀") - Root sentinel for lineage termination
+
+**Core Components:**
+- `CapsuleManifest`: id, parent, signature, lineage, metadata (BTreeMap)
+- `ProofResult`: signature_valid, lineage_valid booleans
+- `ManifestError`: CBOR and integrity errors
+- `VerifyError`: Signature and lineage verification errors
+- `LoadError`: Verification and registration errors
+
+**Verification Process:**
+1. Parse manifest from CBOR bytes
+2. Validate lineage ends with ROOT_ID
+3. Parse Ed25519 signature (64 bytes)
+4. Compute canonical CBOR (without signature field)
+5. Verify signature against canonical bytes
+6. Check parent matches first lineage entry
+7. Return ProofResult with validation results
+
+**Canonical Serialization:**
+- Signature field excluded from canonical bytes
+- BTreeMap ensures deterministic field ordering
+- Fields: id, parent, lineage, metadata (alphabetical)
+- serde_cbor::to_vec for stable CBOR encoding
+
+**Test Coverage:**
+- Parse, verify, and load valid manifests
+- Invalid signature detection (wrong keypair)
+- Tampered data detection (corrupted CBOR)
+- Lineage validation (must end with ⊙₀)
+- Duplicate ID prevention in registry
+
 ### glyph_lexer (92/92 tests ✓)
 - Unicode-aware tokenization (unicode-xid 0.2)
 - Deterministic canonicalization (CRLF→LF, whitespace normalization)
@@ -452,6 +549,14 @@ Fixed three critical position tracking bugs in the glyph_lexer:
 - `hex = "0.4"` - Hexadecimal encoding
 - `rand = "0.8"` - Random number generation
 
+### capsule_manifest
+- `serde = { version = "1.0", features = ["derive"] }` - Serialization
+- `serde_cbor = "0.11"` - CBOR encoding
+- `ed25519-dalek = "1.0"` - Ed25519 signatures
+- `thiserror = "1.0"` - Error handling
+- `hex = "0.4"` - Hexadecimal encoding
+- `rand = "0.7"` - Random number generation (dev)
+
 ### glyph_lexer
 - `unicode-xid = "0.2"` - Unicode identifier validation
 
@@ -480,8 +585,9 @@ All tests must run with `--test-threads=1` for deterministic validation:
 cargo test --workspace -- --test-threads=1
 ```
 
-**Current Test Results: 271 tests passing**
+**Current Test Results: 276 tests passing**
 - capsule_core: 10 tests ✓
+- capsule_manifest: 5 tests ✓
 - genesis_graph: 18 tests ✓
 - glyph_engine: 90 tests ✓ (42 pattern matching + 48 substitution)
 - glyph_lexer: 92 tests ✓
