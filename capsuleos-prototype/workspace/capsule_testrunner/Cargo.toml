@@ -1,0 +1,15 @@
+[package]
+name = "capsule_testrunner"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "capsule_testrunner"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.2", features = ["derive"] }
+ciborium = "0.2"
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1.0"

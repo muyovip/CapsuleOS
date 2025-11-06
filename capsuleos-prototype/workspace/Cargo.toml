@@ -1,0 +1,12 @@
+[workspace]
+members = [
+  "gge",
+  "capsule_manifest",
+  "capsule_core",
+  "sonus_capsule",
+  "render_core",
+  "physix_capsule",
+  "cyberus_cli",
+  "capsule_testrunner"
+]
+resolver = "2"

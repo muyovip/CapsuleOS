@@ -1,0 +1,19 @@
+#!/bin/sh
+# integration_init - minimal init for CapsuleOS prototype
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+echo "[init] starting minimal initramfs..."
+
+# Mount proc/sys if present (not strictly needed)
+mount -t proc proc /proc || true
+mount -t sysfs sysfs /sys || true
+
+echo "[init] Starting Genesis Graph Engine (GGE) as PID 1"
+# In our initramfs we have /sbin/gge pre-copied
+if [ -x /sbin/gge ]; then
+  exec /sbin/gge --root / --capsules-dir /capsules --audit /var/gge/audit.log
+else
+  echo "gge binary missing!"
+  /bin/sh
+fi
