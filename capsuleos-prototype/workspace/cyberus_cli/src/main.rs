@@ -53,12 +53,13 @@ fn main() -> anyhow::Result<()> {
             };
             
             let waveform = synth(&expr)?;
+            let hash = waveform.compute_content_hash();
             write_waveform_cbor(output, &waveform)?;
             
             println!("\n✓ Audio capsule created:");
             println!("  Output:       {}", output.display());
             println!("  Samples:      {}", waveform.samples.len());
-            println!("  Content hash: {}", waveform.content_hash);
+            println!("  Content hash: {}", hash);
         }
         
         Commands::Info { capsule } => {

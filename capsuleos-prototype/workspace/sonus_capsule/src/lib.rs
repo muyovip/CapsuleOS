@@ -15,7 +15,22 @@ pub enum Expression {
 pub struct WaveformExpr {
     pub sample_rate: u32,
     pub samples: Vec<f32>,
-    pub content_hash: String,
+}
+
+impl WaveformExpr {
+    pub fn canonical_serialize(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(self, &mut bytes).expect("serialize ok");
+        bytes
+    }
+    
+    pub fn compute_content_hash(&self) -> String {
+        let cbor_bytes = self.canonical_serialize();
+        let mut h = Sha256::new();
+        h.update(b"AudioV1");
+        h.update(&cbor_bytes);
+        hex::encode(h.finalize())
+    }
 }
 
 pub fn synth(expr: &Expression) -> anyhow::Result<WaveformExpr> {
@@ -27,13 +42,7 @@ pub fn synth(expr: &Expression) -> anyhow::Result<WaveformExpr> {
                 let t = n as f32 / SAMPLE_RATE as f32;
                 samples.push((2.0 * PI * freq * t).sin() * amp);
             }
-            let mut cbor_bytes = Vec::new();
-            ciborium::ser::into_writer(&samples, &mut cbor_bytes)?;
-            let mut h = Sha256::new();
-            h.update(b"AudioV1");
-            h.update(&cbor_bytes);
-            let hash = hex::encode(h.finalize());
-            Ok(WaveformExpr { sample_rate: SAMPLE_RATE, samples, content_hash: hash })
+            Ok(WaveformExpr { sample_rate: SAMPLE_RATE, samples })
         }
     }
 }
