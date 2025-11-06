@@ -1,0 +1,1 @@
+/home/runner/workspace/capsuleos-prototype/workspace/target/release/libphysix_capsule.rlib: /home/runner/workspace/capsuleos-prototype/workspace/physix_capsule/src/lib.rs /home/runner/workspace/capsuleos-prototype/workspace/render_core/src/lib.rs

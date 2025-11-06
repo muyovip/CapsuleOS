@@ -1,0 +1,1 @@
+/home/runner/workspace/capsuleos-prototype/workspace/target/release/cyberus_cli: /home/runner/workspace/capsuleos-prototype/workspace/capsule_manifest/src/lib.rs /home/runner/workspace/capsuleos-prototype/workspace/cyberus_cli/src/main.rs /home/runner/workspace/capsuleos-prototype/workspace/sonus_capsule/src/lib.rs
