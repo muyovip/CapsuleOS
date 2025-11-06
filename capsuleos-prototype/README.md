@@ -192,6 +192,46 @@ During pipeline execution, GGE creates:
 └─ audit.log              (timestamped operation log)
 ```
 
+## Verification Output
+
+Successful test run showing deterministic, self-verifying execution:
+
+```
+→ RENDER STAGE
+  Render output: 64x64 pixels
+  Content hash:  d018bd66491e62f8726cd593691b9a5320677ca53131f0cfc522a1d996d11940
+  Saved to:      /tmp/capsule_integration/var/gge/graph/render_d018bd66491e62f8726cd593691b9a5320677ca53131f0cfc522a1d996d11940.cbor
+
+→ PHYSICS STAGE
+  Physics transforms: 2
+  Content hash:       10f9b57c16771e204117ee00548a29f8c90f58cb94783ab446ef54e70bb44b90
+  Saved to:           /tmp/capsule_integration/var/gge/graph/phys_10f9b57c16771e204117ee00548a29f8c90f58cb94783ab446ef54e70bb44b90.cbor
+
+→ AUDIO STAGE
+  Audio synthesis: 440Hz sine wave
+  Sample count:    48000
+  Content hash:    289a748cfc1e05198e610613558cddbe70e2cf0482587353331565870134d771
+  Saved to:        /tmp/capsule_integration/var/gge/graph/audio_289a748cfc1e05198e610613558cddbe70e2cf0482587353331565870134d771.cbor
+
+✓ Pipeline finished - cosmic synthesis complete!
+```
+
+**Hash Verification (capsule_testrunner):**
+```
+✓ render_d018bd66491e62f8726cd593691b9a5320677ca53131f0cfc522a1d996d11940.cbor [RenderV1]
+✓ phys_10f9b57c16771e204117ee00548a29f8c90f58cb94783ab446ef54e70bb44b90.cbor [NodeV1]  
+✓ audio_289a748cfc1e05198e610613558cddbe70e2cf0482587353331565870134d771.cbor [AudioV1]
+
+Verification: 3/3 files verified
+✓ All content hashes verified and matching!
+```
+
+This demonstrates:
+- **Deterministic execution**: Same inputs always produce same outputs
+- **Content-addressable storage**: All artifacts named by their cryptographic hash
+- **Self-verification**: Testrunner confirms hash integrity of all pipeline outputs
+- **End-to-end integration**: Render → Physics → Audio pipeline working correctly
+
 ## Testing Without QEMU
 
 If you don't have QEMU or a kernel available:
