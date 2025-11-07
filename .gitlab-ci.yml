@@ -1,32 +1,32 @@
-stages:
-  - build
-  - test
-  - release
+    stages:
+      - build
+      - test
+      - release
 
-build:
-  stage: build
-  image: rust:latest
-  script:
-    - cargo build --release
-  artifacts:
-    paths:
-      - target/release/capsuleos
-  only:
-    - main
+    build:
+      stage: build
+      image: rust:latest
+      script:
+        - cargo build --release
+      artifacts:
+        paths:
+          - target/release/capsuleos
+      only:
+        - main
 
-test:
-  stage: test
-  image: rust:latest
-  script:
-    - cargo test
-  only:
-    - main
+    test:
+      stage: test
+      image: rust:latest
+      script:
+        - cargo test
+      only:
+        - main
 
-release:
-  stage: release
-  image: rust:latest
-  script:
-    - echo "Release: v1.0.0-social-$(date +%Y%m%d-%H%M)"
-  when: manual
-  only:
-    - main
+    release:
+      stage: release
+      image: rust:latest
+      script:
+        - 'echo "Release: v1.0.0-social-$(date +%Y%m%d-%H%M)"'
+      when: manual
+      only:
+        - main
