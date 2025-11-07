@@ -1,0 +1,16 @@
+{ pkgs ? import <nixpkgs> {} }:
+
+pkgs.mkShell {
+  buildInputs = with pkgs; [
+    rustc cargo clippy rustfmt
+    git gnupg
+    openssl pkg-config
+    nix
+  ];
+
+  shellHook = ''
+    export CARGO_HOME="$PWD/.cargo"
+    export PATH="$CARGO_HOME/bin:$PATH"
+    echo "CapsuleOS Dev Shell Activated — cos(Blue) = 1"
+  '';
+}
