@@ -1,3 +1,24 @@
 [workspace]
 resolver = "2"
-members = ["capsule_core", "glyph_lexer", "glyph_parser", "genesis_graph", "glyph_engine", "rewrite_tx", "capsule_manifest", "genesis_engine", "cyberus_cli", "render_core_capsule", "physix_capsule", "sonus_capsule"]
+members = [
+    "capsule_core",
+    "glyph_engine",
+    "genesis_engine",
+    "rewrite_tx",
+    "capsuleos"
+]
+
+# ──────────────────────────────────────────────
+# COSMIC PROFILES — BARE METAL ASCENSION
+# ──────────────────────────────────────────────
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+panic = "abort"
+opt-level = 0
+
