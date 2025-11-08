@@ -1,26 +1,2 @@
-modules = ["rust-stable"]
 [agent]
 expertMode = true
-
-[workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "test-all"
-
-[[workflows.workflow]]
-name = "test-all"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cargo test --workspace -- --nocapture"
-
-[workflows.workflow.metadata]
-outputType = "console"
