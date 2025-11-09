@@ -1,3 +1,6 @@
+# Enable unstable Cargo features
+cargo-features = ["strip"]
+
 [workspace]
 resolver = "2"
 members = [
@@ -21,4 +24,3 @@ strip = true
 [profile.dev]
 panic = "abort"
 opt-level = 0
-

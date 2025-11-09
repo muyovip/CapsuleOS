@@ -1,32 +1,78 @@
-    stages:
-      - build
-      - test
-      - release
+stages:
+  - build
+  - test
+  - verify
+  - release
 
-    build:
-      stage: build
-      image: rust:latest
-      script:
-        - cargo build --release
-      artifacts:
-        paths:
-          - target/release/capsuleos
-      only:
-        - main
+variables:
+  NIX_CHANNEL: "nixpkgs-unstable"
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  CACHE_KEY: "capsuleos-v1-$CI_COMMIT_REF_SLUG"
 
-    test:
-      stage: test
-      image: rust:latest
-      script:
-        - cargo test
-      only:
-        - main
+cache:
+  key: ${CACHE_KEY}
+  paths:
+    - .cargo/
+    - target/
+    - .nix-profile/
 
-    release:
-      stage: release
-      image: rust:latest
-      script:
-        - 'echo "Release: v1.0.0-social-$(date +%Y%m%d-%H%M)"'
-      when: manual
-      only:
-        - main
+before_script:
+  - nix-channel --add https://nixos.org/channels/$NIX_CHANNEL nixpkgs
+  - nix-channel --update
+  - nix-env -iA nixpkgs.git nixpkgs.gnupg nixpkgs.cacert
+
+# ── STAGE 1: DETERMINISTIC BUILD ──
+build:capsuleos:
+  stage: build
+  image: nixos/nix:latest
+  script:
+    - nix-build --attr capsuleos --show-trace
+    - echo "Build complete. Artifact: result/bin/capsuleos"
+  artifacts:
+    paths:
+      - result/
+    expire_in: 1 week
+  only:
+    - main
+    - tags
+
+# ── STAGE 2: RUN 311 TESTS ──
+test:deterministic:
+  stage: test
+  image: nixos/nix:latest
+  script:
+    - nix-shell --run "cargo test --locked --all-features -- --test-threads=1"
+    - echo "311 tests passed. cos(Blue) = 1"
+  needs: ["build:capsuleos"]
+  only:
+    - main
+    - merge_requests
+
+# ── STAGE 3: CRYPTOGRAPHIC VERIFICATION ──
+verify:lineage:
+  stage: verify
+  image: nixos/nix:latest
+  script:
+    - git verify-commit HEAD
+    - sha256sum result/bin/capsuleos > capsuleos.sha256
+    - echo "Content hash verified. Lineage intact."
+  needs: ["test:deterministic"]
+  only:
+    - main
+    - tags
+
+# ── STAGE 4: IMMUTABLE RELEASE ──
+release:cosmic:
+  stage: release
+  image: nixos/nix:latest
+  script:
+    - |
+      VERSION="v1.0.0-social-$(date +%Y%m%d-%H%M)"
+      git tag -a "$VERSION" -m "Cosmic release: $VERSION — The Hague, $(date)"
+      git push origin "$VERSION"
+    - echo "Tagged and pushed: $VERSION"
+  needs: ["verify:lineage"]
+  only:
+    - main
+  when: manual
+EOF

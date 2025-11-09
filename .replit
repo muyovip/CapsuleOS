@@ -1,2 +1,36 @@
-[agent]
-expertMode = true
+[env]
+# This line forces the shell to use your Rust installation first, ignoring Nix
+PATH = "${HOME}/.cargo/bin:${PATH}"
+
+[run]
+# This is the command that runs when you click the "Run" button
+command = "cargo run --release"
+
+[packager]
+language = "rust"
+
+# This command runs every time the Replit container starts
+onBoot = "source $HOME/.cargo/env"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "CapsuleOS"
+
+[[workflows.workflow]]
+name = "CapsuleOS"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo run --release"
+
+[workflows.workflow.metadata]
+outputType = "console"
