@@ -1,0 +1,32 @@
+Assuming Stratheum role.
+
+Objective: To acquire a comprehensive diagnostic report of the current CapsuleOS Repl environment to determine the precise state of the build configuration and identify the root cause of the operational failure.
+
+Constraint: The agent is instructed to perform read-only analysis. Under no circumstances are any files to be created, modified, or deleted. No commands are to be run that alter the system state (e.g., apt-get install, rustup default). The sole purpose is to gather and report information.
+
+Prompt for Replit Agent:
+
+Please perform a full diagnostic analysis of this Repl and provide a detailed status report. Do not make any changes to any files or configurations. Your task is to investigate and report only.
+
+Your report should include the following sections:
+
+ Configuration Analysis:
+ Identify which configuration system is currently active or in conflict (.replit file, replit.yaml file, or the Workflows UI).
+ If a .replit file exists, report its full content.
+ If a replit.yaml file exists, report its full content.
+ Report any syntax errors or LSP warnings associated with these configuration files.
+ Environment Path & Toolchain Status:
+ Report the output of echo $PATH.
+ Report the output of which cargo.
+ Report the output of cargo --version.
+ Report the output of rustc --version.
+ If any of the above commands fail, report the exact error message.
+ Project Structure Integrity:
+ Confirm the existence of Cargo.toml in the workspace root.
+ List the contents of the src directory.
+ Report whether a target/release directory exists and, if so, list its contents.
+ Build Process Simulation:
+ Execute the command cargo build --release and provide the complete, unedited output from start to finish.
+ Run Status Diagnosis:
+ Explain why the main "Run" button is currently grayed out. Based on your analysis of the configuration, what is the system expecting in order for it to become active?
+ Compile this information into a single, comprehensive report. Do not attempt to fix any issues you discover. Stand by for further instructions.
