@@ -7,7 +7,7 @@ edition = "2021"
 ed25519-dalek = { version = "2.1", features = ["serde", "rand_core"] }
 sha2 = "0.10"
 ciborium = "0.2"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", default-features = false, features= ["derive"] }
 serde_bytes = "0.11"
 serde_cbor = "0.11"
 hex = "0.4"
