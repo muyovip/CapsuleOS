@@ -10,7 +10,9 @@ members = [
     "rewrite_tx",
     "capsuleos",
     "game_capsule",
-    "genesis_graph"
+    "genesis_graph",
+    "glyph_parser",
+    "glyph_parser_wasm"
 ]
 
 # ──────────────────────────────────────────────
