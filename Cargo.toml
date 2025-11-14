@@ -8,7 +8,9 @@ members = [
     "glyph_engine",
     "genesis_engine",
     "rewrite_tx",
-    "capsuleos"
+    "capsuleos",
+    "game_capsule",
+    "genesis_graph"
 ]
 
 # ──────────────────────────────────────────────
