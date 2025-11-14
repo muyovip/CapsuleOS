@@ -1,0 +1,58 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build release artifacts
+        run: |
+          cargo build --release --target x86_64-unknown-linux-gnu
+          cargo build --release --target wasm32-unknown-unknown
+      - name: Build WASM package
+        run: |
+          cd glyph_parser
+          wasm-pack build --target web --out-dir pkg/wasm --release
+      - name: Create archives
+        run: |
+          tar -czf capsuleos-parser-${{ github.ref_name }}-linux.tar.gz \
+            -C target/x86_64-unknown-linux-gnu/release \
+            glyph_parser
+          tar -czf capsuleos-parser-${{ github.ref_name }}-wasm.tar.gz \
+            -C glyph_parser/pkg/wasm .
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: CapsuleOS ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: ./capsuleos-parser-${{ github.ref_name }}-linux.tar.gz
+          asset_name: capsuleos-parser-${{ github.ref_name }}-linux.tar.gz
+          asset_content_type: application/gzip
+      - name: Upload WASM Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: ./capsuleos-parser-${{ github.ref_name }}-wasm.tar.gz
+          asset_name: capsuleos-parser-${{ github.ref_name }}-wasm.tar.gz
+          asset_content_type: application/gzip
