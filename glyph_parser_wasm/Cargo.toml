@@ -23,6 +23,10 @@ thiserror = "1.0"
 # Console logging for debugging
 console_error_panic_hook = "0.1.7"
 
+# Cryptographic dependencies
+sha2 = "0.10"
+hex = "0.4"
+
 [dependencies.web-sys]
 version = "0.3"
 features = [
