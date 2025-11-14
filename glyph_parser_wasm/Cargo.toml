@@ -1,0 +1,36 @@
+[package]
+name = "glyph_parser_wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core dependencies
+wasm-bindgen = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+
+# Local dependencies
+glyph_parser = { path = "../glyph_parser" }
+
+# Error handling
+thiserror = "1.0"
+
+# Console logging for debugging
+console_error_panic_hook = "0.1.7"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "console",
+  "Window",
+  "Document",
+]
+
+[profile.release]
+opt-level = "s"
+lto = true
