@@ -683,6 +683,12 @@ pub fn parse(input: &str) -> Result<Expression, ParseError> {
     parser.parse()
 }
 
+// ============================================================================
+// Game Extensions Module
+// ============================================================================
+
+pub mod game_extensions;
+
 #[cfg(test)]
 mod tests {
     use super::*;
